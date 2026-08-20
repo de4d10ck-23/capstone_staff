@@ -8,7 +8,12 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem('staff_token'));
   const [loading, setLoading] = useState(true);
 
-  const API_URL = 'http://localhost:8080/api';
+  let rawApiUrl = (import.meta.env.VITE_API_URL || 'http://localhost:8080/api').trim();
+  if (!rawApiUrl.includes('localhost') && !rawApiUrl.includes('127.0.0.1')) {
+    rawApiUrl = rawApiUrl.replace(/^http:\/\//i, 'https://');
+  }
+  const cleanApiUrl = rawApiUrl.replace(/\/$/, '');
+  const API_URL = cleanApiUrl.endsWith('/api') ? cleanApiUrl : `${cleanApiUrl}/api`;
   const validRoles = ['city_health_officer', 'sanitization_inspector', 'barangay_official'];
 
   useEffect(() => {
