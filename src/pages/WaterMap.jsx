@@ -191,36 +191,36 @@ const WaterMap = () => {
   const barangays = Array.from(new Set(locations.map((l) => l.barangay).filter(Boolean))).sort();
 
   return (
-    <div className="h-[calc(100vh-140px)] flex flex-col relative rounded-3xl overflow-hidden border border-slate-200/80 shadow-sm font-sans">
+    <div className="h-[calc(100vh-110px)] sm:h-[calc(100vh-140px)] flex flex-col relative rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200/80 shadow-sm font-sans">
       {/* Top Controls */}
-      <div className="bg-white p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 z-10 shadow-sm">
-        <div className="flex items-center gap-3">
-          <h2 className="font-bold text-sm text-slate-900">Field Surveillance & Risk Map</h2>
+      <div className="bg-white p-3 sm:p-4 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-4 z-10 shadow-sm">
+        <div className="flex items-center justify-between w-full sm:w-auto gap-3">
+          <h2 className="font-bold text-xs sm:text-sm text-slate-900 truncate">Field Surveillance & Risk Map</h2>
           <button
             onClick={fetchData}
-            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex-shrink-0"
             title="Refresh"
           >
             <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           </button>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 text-xs">
-          <div className="relative w-48">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+        <div className="flex flex-wrap items-center gap-2 text-xs w-full sm:w-auto">
+          <div className="relative flex-1 sm:w-44 min-w-[120px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
             <input
               type="text"
               placeholder="Search station..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+              className="w-full pl-7 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
             />
           </div>
 
           <select
             value={selectedBarangay}
             onChange={(e) => setSelectedBarangay(e.target.value)}
-            className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
           >
             <option value="all">All Barangays</option>
             {barangays.map((b) => (
@@ -230,22 +230,22 @@ const WaterMap = () => {
 
           <button
             onClick={() => setShowHeatmap(!showHeatmap)}
-            className={`px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all ${
               showHeatmap ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-white text-slate-500 border-slate-200"
             }`}
           >
-            {showHeatmap ? <Eye size={14} /> : <EyeOff size={14} />}
+            {showHeatmap ? <Eye size={13} /> : <EyeOff size={13} />}
             <span>Risk Heatmap</span>
           </button>
 
           <button
             onClick={() => setShowMarkers(!showMarkers)}
-            className={`px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 transition-all ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all ${
               showMarkers ? "bg-blue-50 text-blue-700 border-blue-200" : "bg-white text-slate-500 border-slate-200"
             }`}
           >
-            {showMarkers ? <Eye size={14} /> : <EyeOff size={14} />}
-            <span>Stations ({locations.length})</span>
+            {showMarkers ? <Eye size={13} /> : <EyeOff size={13} />}
+            <span>Pins ({locations.length})</span>
           </button>
         </div>
       </div>
@@ -255,13 +255,13 @@ const WaterMap = () => {
         <div ref={mapContainer} className="w-full h-full" />
 
         {/* Map Style Selector Overlay */}
-        <div className="absolute top-4 left-4 z-10 bg-white/95 backdrop-blur-md px-2 py-1.5 rounded-2xl shadow-lg border border-slate-200/80 flex items-center gap-1 text-xs font-sans">
+        <div className="absolute top-3 left-3 sm:top-4 sm:left-4 z-10 bg-white/95 backdrop-blur-md px-2 py-1.5 rounded-2xl shadow-lg border border-slate-200/80 flex items-center gap-1 text-[11px] sm:text-xs font-sans">
           <div className="px-1 text-slate-700">
-            <Layers size={16} />
+            <Layers size={15} />
           </div>
           <button
             onClick={() => setMapStyle("mapbox://styles/mapbox/streets-v12")}
-            className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               mapStyle === "mapbox://styles/mapbox/streets-v12"
                 ? "bg-[#0f3b82] text-white shadow-sm"
                 : "text-slate-700 hover:text-slate-900 font-medium hover:bg-slate-50"
@@ -271,7 +271,7 @@ const WaterMap = () => {
           </button>
           <button
             onClick={() => setMapStyle("mapbox://styles/mapbox/satellite-streets-v12")}
-            className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               mapStyle === "mapbox://styles/mapbox/satellite-streets-v12"
                 ? "bg-[#0f3b82] text-white shadow-sm"
                 : "text-slate-700 hover:text-slate-900 font-medium hover:bg-slate-50"
@@ -281,7 +281,7 @@ const WaterMap = () => {
           </button>
           <button
             onClick={() => setMapStyle("mapbox://styles/mapbox/light-v11")}
-            className={`px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
               mapStyle === "mapbox://styles/mapbox/light-v11"
                 ? "bg-[#0f3b82] text-white shadow-sm"
                 : "text-slate-700 hover:text-slate-900 font-medium hover:bg-slate-50"
@@ -292,14 +292,14 @@ const WaterMap = () => {
         </div>
 
         {selectedLocation && (
-          <div className="absolute top-6 right-6 z-10 w-80 bg-white/95 backdrop-blur-2xl rounded-2xl p-5 shadow-2xl border border-slate-100 animate-fade-in">
+          <div className="absolute bottom-4 left-4 right-4 sm:top-6 sm:right-6 sm:bottom-auto sm:left-auto sm:w-80 z-20 bg-white/95 backdrop-blur-2xl rounded-3xl p-5 shadow-2xl border border-slate-100 animate-fade-in">
             <div className="flex items-start justify-between pb-3 border-b border-slate-100">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Station Overview</span>
                 <h3 className="font-bold text-base text-slate-900">{selectedLocation.name}</h3>
                 <p className="text-xs text-slate-500">Barangay {selectedLocation.barangay}</p>
               </div>
-              <button onClick={() => setSelectedLocation(null)} className="text-slate-400 hover:text-slate-700 p-1">
+              <button onClick={() => setSelectedLocation(null)} className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100">
                 ✕
               </button>
             </div>
