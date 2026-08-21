@@ -12,7 +12,7 @@ import Alerts from './pages/Alerts';
 import InspectionRequests from './pages/InspectionRequests';
 
 // Inspector Pages
-import AddWaterSource from './pages/inspector/AddWaterSource';
+import WaterSources from './pages/WaterSources';
 import GenerateReports from './pages/inspector/GenerateReports';
 
 // CHO Pages
@@ -54,9 +54,10 @@ function App() {
             <Route path="inspections" element={<InspectionRequests />} />
             
             {/* Inspector Specific */}
-            <Route path="add-water-source" element={
-              <RoleRoute allowedRoles={['sanitization_inspector']}><AddWaterSource /></RoleRoute>
+            <Route path="water-sources" element={
+              <RoleRoute allowedRoles={['sanitization_inspector']}><WaterSources /></RoleRoute>
             } />
+            <Route path="add-water-source" element={<Navigate to="/water-sources" replace />} />
             <Route path="generate-reports" element={
               <RoleRoute allowedRoles={['sanitization_inspector']}><GenerateReports /></RoleRoute>
             } />

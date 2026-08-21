@@ -16,7 +16,8 @@ import {
   ClipboardList,
   UserCheck,
   Menu,
-  X
+  X,
+  Droplets
 } from 'lucide-react';
 
 const Layout = () => {
@@ -27,12 +28,12 @@ const Layout = () => {
     { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
     { to: "/map", icon: <Map size={20} />, label: "Live Water Map" },
     { to: "/analytics", icon: <BarChart2 size={20} />, label: "Analytics & Trends" },
-    { to: "/alerts", icon: <Bell size={20} />, label: "Alerts & Notifications" },
+    { to: "/alerts", icon: <Bell size={20} />, label: "Broadcast Alerts & Advisories" },
     { to: "/inspections", icon: <ClipboardList size={20} />, label: "Inspection Requests" },
   ];
 
   const inspectorNav = [
-    { to: "/add-water-source", icon: <PlusCircle size={20} />, label: "Add Water Source" },
+    { to: "/water-sources", icon: <Droplets size={20} />, label: "Water Sources Registry" },
     { to: "/generate-reports", icon: <FileText size={20} />, label: "Generate Reports" },
   ];
 
@@ -114,7 +115,9 @@ const Layout = () => {
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm text-slate-900 truncate">{user?.full_name}</p>
             <p className="text-xs text-blue-600 font-medium capitalize truncate">
-              {user?.barangay ? `Brgy. ${user?.barangay}` : user?.role?.replace(/_/g, ' ')}
+              {user?.role === "barangay_official" && user?.barangay
+                ? `Brgy. ${user.barangay}`
+                : "Staff"}
             </p>
           </div>
         </div>

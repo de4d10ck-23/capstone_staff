@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { PlusCircle, CheckCircle2, AlertCircle, MapPin, Droplets, ShieldCheck } from "lucide-react";
+import { MAASIN_BARANGAYS as barangays } from "../../constants/barangays";
 
 const AddWaterSource = () => {
   const { token, API_URL } = useAuth();
@@ -68,12 +69,6 @@ const AddWaterSource = () => {
       setIsSubmitting(false);
     }
   };
-
-  const barangays = [
-    "Combado", "Batuan", "Rizal", "Hantag", "Malapoc Sur", "Malapoc Norte",
-    "Matin-ao", "San Isidro", "Tagnipa", "Abgao", "Asuncion", "Canturing",
-    "Dongon", "Guadalupe", "Ibarra", "Mantahan", "Tunga-tunga"
-  ];
 
   return (
     <div className="max-w-3xl mx-auto space-y-8 animate-fade-in font-sans">
