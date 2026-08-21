@@ -41,6 +41,27 @@ const Dashboard = () => {
   const isCHO = user?.role === "city_health_officer";
   const isBarangay = user?.role === "barangay_official";
 
+  const getRoleDisplayName = (role) => {
+    switch (role) {
+      case 'city_health_officer':
+        return 'City Health Officer';
+      case 'sanitization_inspector':
+        return 'Sanitization Inspector';
+      case 'barangay_official':
+        return 'Barangay Official';
+      case 'admin':
+        return 'Administrator';
+      case 'resident':
+        return 'Resident';
+      default:
+        return role
+          ? role
+              .replace(/_/g, ' ')
+              .replace(/\b\w/g, (char) => char.toUpperCase())
+          : 'Staff';
+    }
+  };
+
   const pendingInspections = inspections.filter((i) => i.status === "pending" || i.status === "assigned");
 
   return (
@@ -49,7 +70,7 @@ const Dashboard = () => {
       <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div className="space-y-2">
           <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
-            {user?.role?.replace(/_/g, " ")} • Active Duty
+            {getRoleDisplayName(user?.role)} • Active Duty
           </span>
           <h1 className="text-3xl font-extrabold text-white">Welcome, {user?.full_name}</h1>
           <p className="text-white/80 text-sm max-w-xl">

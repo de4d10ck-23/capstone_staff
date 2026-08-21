@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { 
   Droplets, 
@@ -13,9 +13,16 @@ import {
   ShieldCheck, 
   AlertTriangle,
   XCircle,
-  Clock
+  Clock,
+  Crosshair,
+  Loader2,
+  Compass
 } from "lucide-react";
+import mapboxgl from "mapbox-gl";
+import "mapbox-gl/dist/mapbox-gl.css";
 import { MAASIN_BARANGAYS as barangays } from "../constants/barangays";
+
+const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_KEY || "pk.eyJ1Ijoiamx0dCIsImEiOiJjbW9pNHBpZTgwMHB3MnFxMHNxcnY0MXBiIn0.__mzgeQcXuEDVkV6q8QNfQ";
 
 const WaterSources = () => {
   const { token, API_URL, user } = useAuth();
@@ -40,6 +47,13 @@ const WaterSources = () => {
     bacteriological_exam: "passed",
     description: ""
   });
+
+  const [locating, setLocating] = useState(false);
+  const [geoError, setGeoError] = useState("");
+
+  const mapContainer = useRef(null);
+  const map = useRef(null);
+  const marker = useRef(null);
 
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
@@ -96,6 +110,135 @@ const WaterSources = () => {
       });
     }
     setIsModalOpen(true);
+  };
+
+  // Initialize Mapbox map inside modal
+  useEffect(() => {
+    if (!isModalOpen || !mapContainer.current) return;
+
+    mapboxgl.accessToken = MAPBOX_TOKEN;
+
+    const initialLat = parseFloat(formData.latitude) || 10.1330;
+    const initialLng = parseFloat(formData.longitude) || 124.8700;
+
+    map.current = new mapboxgl.Map({
+      container: mapContainer.current,
+      style: "mapbox://styles/mapbox/streets-v12",
+      center: [initialLng, initialLat],
+      zoom: 15,
+    });
+
+    map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
+
+    const el = document.createElement("div");
+    el.className = "flex flex-col items-center group cursor-grab";
+    el.innerHTML = `
+      <div class="px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-bold shadow-md mb-1 whitespace-nowrap border border-cyan-400">
+        ${formData.name || "Water Station"}
+      </div>
+      <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-500 border-2 border-white shadow-xl flex items-center justify-center text-white ring-4 ring-blue-500/25">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
+          <circle cx="12" cy="10" r="3"/>
+        </svg>
+      </div>
+    `;
+
+    marker.current = new mapboxgl.Marker({ element: el, draggable: true, anchor: "bottom" })
+      .setLngLat([initialLng, initialLat])
+      .addTo(map.current);
+
+    marker.current.on("dragend", () => {
+      const lngLat = marker.current.getLngLat();
+      setFormData((prev) => ({
+        ...prev,
+        latitude: parseFloat(lngLat.lat.toFixed(6)),
+        longitude: parseFloat(lngLat.lng.toFixed(6)),
+      }));
+    });
+
+    map.current.on("click", (e) => {
+      const { lng, lat } = e.lngLat;
+      marker.current.setLngLat([lng, lat]);
+      setFormData((prev) => ({
+        ...prev,
+        latitude: parseFloat(lat.toFixed(6)),
+        longitude: parseFloat(lng.toFixed(6)),
+      }));
+    });
+
+    const timer = setTimeout(() => {
+      if (map.current) {
+        map.current.resize();
+      }
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      if (map.current) {
+        map.current.remove();
+        map.current = null;
+        marker.current = null;
+      }
+    };
+  }, [isModalOpen]);
+
+  // Use Current Location Handler
+  const handleUseCurrentLocation = () => {
+    setGeoError("");
+    if (!navigator.geolocation) {
+      setGeoError("Geolocation is not supported by your web browser.");
+      return;
+    }
+
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const lat = parseFloat(position.coords.latitude.toFixed(6));
+        const lng = parseFloat(position.coords.longitude.toFixed(6));
+
+        setFormData((prev) => ({
+          ...prev,
+          latitude: lat,
+          longitude: lng,
+        }));
+
+        if (map.current) {
+          map.current.flyTo({
+            center: [lng, lat],
+            zoom: 16,
+            essential: true,
+          });
+        }
+        if (marker.current) {
+          marker.current.setLngLat([lng, lat]);
+        }
+        setLocating(false);
+      },
+      (error) => {
+        console.error("Geolocation error:", error);
+        setLocating(false);
+        if (error.code === 1) {
+          setGeoError("Location access denied. Please allow GPS permission in your browser or click on the map to pinpoint.");
+        } else {
+          setGeoError("Unable to acquire your current location. Please pinpoint the location on the map.");
+        }
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+    );
+  };
+
+  const handleManualCoordChange = (field, val) => {
+    setFormData((prev) => {
+      const updated = { ...prev, [field]: val };
+      const lat = field === "latitude" ? parseFloat(val) : parseFloat(prev.latitude);
+      const lng = field === "longitude" ? parseFloat(val) : parseFloat(prev.longitude);
+      if (!isNaN(lat) && !isNaN(lng) && marker.current && map.current) {
+        marker.current.setLngLat([lng, lat]);
+        map.current.flyTo({ center: [lng, lat], zoom: 15 });
+      }
+      return updated;
+    });
   };
 
   const handleSave = async (e) => {
@@ -339,7 +482,7 @@ const WaterSources = () => {
       {/* Add / Edit Water Source Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative animate-fade-in max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative animate-fade-in max-h-[92vh] overflow-y-auto">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 cursor-pointer"
@@ -350,7 +493,7 @@ const WaterSources = () => {
             <h2 className="text-xl font-bold text-slate-900 mb-1">
               {editingSource ? "Edit Water Station" : "Register Water Station"}
             </h2>
-            <p className="text-xs text-slate-500 mb-6">Inspect and update water point parameters and laboratory metrics</p>
+            <p className="text-xs text-slate-500 mb-5">Inspect, locate on Mapbox, and update water point parameters and laboratory metrics</p>
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
@@ -395,29 +538,84 @@ const WaterSources = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Latitude</label>
-                  <input
-                    type="number"
-                    step="0.000001"
-                    value={formData.latitude}
-                    onChange={(e) => setFormData({ ...formData, latitude: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                    required
-                  />
+              {/* Mapbox Interactive Pinpoint & Use Current Location */}
+              <div className="space-y-3 p-4 sm:p-5 rounded-2xl bg-slate-50 border border-blue-200 shadow-inner">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5">
+                      <Compass size={16} className="text-blue-600" />
+                      <label className="text-xs font-bold uppercase tracking-wider text-slate-800">
+                        Station Location (Mapbox Pinpoint)
+                      </label>
+                    </div>
+                    <p className="text-[11px] text-slate-500">
+                      Click the map or drag the pin to set exact coordinates.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentLocation}
+                    disabled={locating}
+                    className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-60 flex-shrink-0"
+                  >
+                    {locating ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        <span>Acquiring GPS...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Crosshair size={14} />
+                        <span>Use Current Location</span>
+                      </>
+                    )}
+                  </button>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Longitude</label>
-                  <input
-                    type="number"
-                    step="0.000001"
-                    value={formData.longitude}
-                    onChange={(e) => setFormData({ ...formData, longitude: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                    required
-                  />
+                {geoError && (
+                  <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
+                    <AlertCircle size={14} className="text-amber-600 flex-shrink-0" />
+                    <span>{geoError}</span>
+                  </div>
+                )}
+
+                {/* Map View */}
+                <div className="relative w-full h-64 rounded-2xl overflow-hidden border border-slate-300 shadow-md">
+                  <div ref={mapContainer} className="w-full h-full" />
+                  <div className="absolute top-3 left-3 bg-slate-900/85 backdrop-blur-md px-3 py-1.5 rounded-xl text-white text-[11px] font-mono shadow-md border border-white/10 pointer-events-none flex items-center gap-2 z-10">
+                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
+                    <span>
+                      Lat: {parseFloat(formData.latitude || 0).toFixed(6)} | Lng: {parseFloat(formData.longitude || 0).toFixed(6)}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Manual Coordinate Inputs */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1">Latitude (GPS)</label>
+                    <input
+                      type="number"
+                      step="0.000001"
+                      value={formData.latitude}
+                      onChange={(e) => handleManualCoordChange("latitude", e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-600"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1">Longitude (GPS)</label>
+                    <input
+                      type="number"
+                      step="0.000001"
+                      value={formData.longitude}
+                      onChange={(e) => handleManualCoordChange("longitude", e.target.value)}
+                      className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-600"
+                      required
+                    />
+                  </div>
                 </div>
               </div>
 

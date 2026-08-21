@@ -14,6 +14,7 @@ import InspectionRequests from './pages/InspectionRequests';
 // Inspector Pages
 import WaterSources from './pages/WaterSources';
 import GenerateReports from './pages/inspector/GenerateReports';
+import EndorsedReports from './pages/inspector/EndorsedReports';
 
 // CHO Pages
 import ViewReports from './pages/cho/ViewReports';
@@ -54,6 +55,9 @@ function App() {
             <Route path="inspections" element={<InspectionRequests />} />
             
             {/* Inspector Specific */}
+            <Route path="endorsed-reports" element={
+              <RoleRoute allowedRoles={['sanitization_inspector']}><EndorsedReports /></RoleRoute>
+            } />
             <Route path="water-sources" element={
               <RoleRoute allowedRoles={['sanitization_inspector']}><WaterSources /></RoleRoute>
             } />

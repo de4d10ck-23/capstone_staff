@@ -7,16 +7,17 @@ import {
   BarChart2, 
   FileText, 
   Bell, 
-  PlusCircle,
-  FileCheck,
-  Send,
-  AlertOctagon,
-  LogOut,
-  MapPin,
-  ClipboardList,
-  UserCheck,
-  Menu,
-  X,
+  PlusCircle, 
+  FileCheck, 
+  Send, 
+  AlertOctagon, 
+  ShieldAlert,
+  LogOut, 
+  MapPin, 
+  ClipboardList, 
+  UserCheck, 
+  Menu, 
+  X, 
   Droplets
 } from 'lucide-react';
 
@@ -33,6 +34,7 @@ const Layout = () => {
   ];
 
   const inspectorNav = [
+    { to: "/endorsed-reports", icon: <ShieldAlert size={20} />, label: "Endorsed Reports & Sources" },
     { to: "/water-sources", icon: <Droplets size={20} />, label: "Water Sources Registry" },
     { to: "/generate-reports", icon: <FileText size={20} />, label: "Generate Reports" },
   ];
@@ -57,6 +59,27 @@ const Layout = () => {
     }
   };
 
+  const getRoleDisplayName = (role) => {
+    switch (role) {
+      case 'city_health_officer':
+        return 'City Health Officer';
+      case 'sanitization_inspector':
+        return 'Sanitization Inspector';
+      case 'barangay_official':
+        return 'Barangay Official';
+      case 'admin':
+        return 'Administrator';
+      case 'resident':
+        return 'Resident';
+      default:
+        return role
+          ? role
+              .replace(/_/g, ' ')
+              .replace(/\b\w/g, (char) => char.toUpperCase())
+          : 'Staff';
+    }
+  };
+
   const navItems = [...sharedNav, ...getRoleNav()];
 
   const renderNavContent = () => (
@@ -74,7 +97,7 @@ const Layout = () => {
           <div>
             <h1 className="font-bold text-base text-slate-900 leading-tight">WaterWatch</h1>
             <p className="text-[11px] font-semibold text-blue-600 uppercase tracking-wider">
-              {user?.role?.replace(/_/g, ' ')}
+              {getRoleDisplayName(user?.role)}
             </p>
           </div>
         </div>
@@ -114,10 +137,10 @@ const Layout = () => {
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm text-slate-900 truncate">{user?.full_name}</p>
-            <p className="text-xs text-blue-600 font-medium capitalize truncate">
+            <p className="text-xs text-blue-600 font-medium truncate">
               {user?.role === "barangay_official" && user?.barangay
-                ? `Brgy. ${user.barangay}`
-                : "Staff"}
+                ? `Brgy. ${user.barangay} Official`
+                : getRoleDisplayName(user?.role)}
             </p>
           </div>
         </div>
@@ -171,7 +194,7 @@ const Layout = () => {
 
           <div className="flex items-center gap-2 sm:gap-4">
             <span className="text-xs font-semibold px-3 py-1 bg-blue-50 text-blue-800 rounded-full border border-blue-200 truncate">
-              {user?.role?.replace(/_/g, ' ')}
+              {getRoleDisplayName(user?.role)}
             </span>
           </div>
         </header>

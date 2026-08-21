@@ -162,9 +162,11 @@ const WaterMap = () => {
       const color = isSafe ? "#10b981" : isWarning ? "#f59e0b" : "#ef4444";
 
       const el = document.createElement("div");
-      el.className = "custom-water-marker cursor-pointer transform hover:scale-125 transition-transform duration-200";
+      el.className = "custom-water-marker cursor-pointer group";
+      el.style.width = "32px";
+      el.style.height = "32px";
       el.innerHTML = `
-        <div style="background-color: ${color}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
+        <div class="transition-transform duration-200 ease-out group-hover:scale-125 origin-center" style="background-color: ${color}; width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 3px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.3);">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
           </svg>
@@ -180,7 +182,7 @@ const WaterMap = () => {
         });
       });
 
-      const marker = new mapboxgl.Marker(el)
+      const marker = new mapboxgl.Marker({ element: el, anchor: "center" })
         .setLngLat([loc.longitude, loc.latitude])
         .addTo(map.current);
 
