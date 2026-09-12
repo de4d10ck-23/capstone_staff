@@ -59,6 +59,7 @@ const AddWaterSource = () => {
           coliform_count: 0,
           description: ""
         });
+
       } else {
         setErrorMsg(data.detail || "Failed to register station.");
       }
@@ -172,7 +173,10 @@ const AddWaterSource = () => {
             </div>
           </div>
 
+
+
           <div className="grid grid-cols-3 gap-4">
+
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Safety Status</label>
               <select

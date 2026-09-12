@@ -16,7 +16,8 @@ import {
   Clock,
   Crosshair,
   Loader2,
-  Compass
+  Compass,
+  Shield
 } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -47,6 +48,7 @@ const WaterSources = () => {
     bacteriological_exam: "passed",
     description: ""
   });
+
 
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState("");
@@ -131,12 +133,14 @@ const WaterSources = () => {
     map.current.addControl(new mapboxgl.NavigationControl(), "top-right");
 
     const el = document.createElement("div");
-    el.className = "flex flex-col items-center group cursor-grab";
+    el.className = "relative flex items-center justify-center cursor-grab group";
+    el.style.width = "32px";
+    el.style.height = "32px";
     el.innerHTML = `
-      <div class="px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-bold shadow-md mb-1 whitespace-nowrap border border-cyan-400">
+      <div class="absolute bottom-full mb-1.5 px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-bold shadow-md whitespace-nowrap border border-cyan-400 pointer-events-none">
         ${formData.name || "Water Station"}
       </div>
-      <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-500 border-2 border-white shadow-xl flex items-center justify-center text-white ring-4 ring-blue-500/25">
+      <div class="w-8 h-8 rounded-full bg-gradient-to-tr from-blue-600 to-cyan-500 border-2 border-white shadow-xl flex items-center justify-center text-white ring-4 ring-blue-500/25 transition-transform duration-150 group-hover:scale-110">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/>
           <circle cx="12" cy="10" r="3"/>
@@ -144,9 +148,10 @@ const WaterSources = () => {
       </div>
     `;
 
-    marker.current = new mapboxgl.Marker({ element: el, draggable: true, anchor: "bottom" })
+    marker.current = new mapboxgl.Marker({ element: el, draggable: true, anchor: "center" })
       .setLngLat([initialLng, initialLat])
       .addTo(map.current);
+
 
     marker.current.on("dragend", () => {
       const lngLat = marker.current.getLngLat();
@@ -182,6 +187,7 @@ const WaterSources = () => {
       }
     };
   }, [isModalOpen]);
+
 
   // Use Current Location Handler
   const handleUseCurrentLocation = () => {
@@ -228,17 +234,71 @@ const WaterSources = () => {
     );
   };
 
+  const updateMapMarker = (latVal, lngVal) => {
+    const lat = parseFloat(latVal);
+    const lng = parseFloat(lngVal);
+    const isValidLat = !isNaN(lat) && lat >= -90 && lat <= 90;
+    const isValidLng = !isNaN(lng) && lng >= -180 && lng <= 180;
+
+    if (isValidLat && isValidLng && marker.current && map.current) {
+      try {
+        marker.current.setLngLat([lng, lat]);
+        map.current.flyTo({ center: [lng, lat], zoom: 15 });
+      } catch (err) {
+        console.warn("Could not update map marker position:", err);
+      }
+    }
+  };
+
   const handleManualCoordChange = (field, val) => {
+    // Check if user pasted a coordinate pair like "10.1330, 124.8700"
+    if (typeof val === "string") {
+      const matches = val.match(/[-+]?[0-9]*\.?[0-9]+/g);
+      if (matches && matches.length >= 2) {
+        let n1 = parseFloat(matches[0]);
+        let n2 = parseFloat(matches[1]);
+        if (!isNaN(n1) && !isNaN(n2)) {
+          let lat = n1;
+          let lng = n2;
+          if (Math.abs(n1) > 90 && Math.abs(n2) <= 90) {
+            lat = n2;
+            lng = n1;
+          }
+          setFormData((prev) => ({ ...prev, latitude: lat, longitude: lng }));
+          updateMapMarker(lat, lng);
+          return;
+        }
+      }
+    }
+
     setFormData((prev) => {
       const updated = { ...prev, [field]: val };
       const lat = field === "latitude" ? parseFloat(val) : parseFloat(prev.latitude);
       const lng = field === "longitude" ? parseFloat(val) : parseFloat(prev.longitude);
-      if (!isNaN(lat) && !isNaN(lng) && marker.current && map.current) {
-        marker.current.setLngLat([lng, lat]);
-        map.current.flyTo({ center: [lng, lat], zoom: 15 });
-      }
+      updateMapMarker(lat, lng);
       return updated;
     });
+  };
+
+  const handleCoordPaste = (e, targetField) => {
+    const pasteText = e.clipboardData?.getData("text") || "";
+    const matches = pasteText.match(/[-+]?[0-9]*\.?[0-9]+/g);
+    if (matches && matches.length >= 2) {
+      e.preventDefault();
+      let n1 = parseFloat(matches[0]);
+      let n2 = parseFloat(matches[1]);
+      if (!isNaN(n1) && !isNaN(n2)) {
+        let lat = n1;
+        let lng = n2;
+        // In the Philippines / globally: latitude is <= 90
+        if (Math.abs(n1) > 90 && Math.abs(n2) <= 90) {
+          lat = n2;
+          lng = n1;
+        }
+        setFormData((prev) => ({ ...prev, latitude: lat, longitude: lng }));
+        updateMapMarker(lat, lng);
+      }
+    }
   };
 
   const handleSave = async (e) => {
@@ -268,6 +328,7 @@ const WaterSources = () => {
         description: formData.description.trim(),
         notes: formData.description.trim()
       };
+
 
       const res = await fetch(url, {
         method,
@@ -594,24 +655,34 @@ const WaterSources = () => {
                 {/* Manual Coordinate Inputs */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                   <div>
-                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1">Latitude (GPS)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600">Latitude (GPS)</label>
+                      <span className="text-[10px] text-slate-400">Accepts paste (lat, lng)</span>
+                    </div>
                     <input
-                      type="number"
-                      step="0.000001"
+                      type="text"
+                      inputMode="decimal"
                       value={formData.latitude}
                       onChange={(e) => handleManualCoordChange("latitude", e.target.value)}
+                      onPaste={(e) => handleCoordPaste(e, "latitude")}
+                      placeholder="e.g. 10.1330"
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-600"
                       required
                     />
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1">Longitude (GPS)</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600">Longitude (GPS)</label>
+                      <span className="text-[10px] text-slate-400">Accepts paste (lat, lng)</span>
+                    </div>
                     <input
-                      type="number"
-                      step="0.000001"
+                      type="text"
+                      inputMode="decimal"
                       value={formData.longitude}
                       onChange={(e) => handleManualCoordChange("longitude", e.target.value)}
+                      onPaste={(e) => handleCoordPaste(e, "longitude")}
+                      placeholder="e.g. 124.8700"
                       className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:border-blue-600"
                       required
                     />
@@ -619,7 +690,9 @@ const WaterSources = () => {
                 </div>
               </div>
 
+
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Safety Status</label>
                   <select
