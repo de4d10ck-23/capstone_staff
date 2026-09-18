@@ -207,7 +207,7 @@ const WaterMap = () => {
           paint: {
             // Heatmap weight from normalized hazard risk weights (0.1 to 1.0)
             "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0.1, 0.5, 0.6, 1.0, 1.0],
-            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.8, 14, 1.8],
+            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.8, 14, 1.4, 18, 2.2],
             "heatmap-color": [
               "interpolate",
               ["linear"],
@@ -218,7 +218,16 @@ const WaterMap = () => {
               0.7, "rgba(239, 68, 68, 0.85)",
               1.0, "rgba(185, 28, 28, 0.95)",
             ],
-            "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 8, 14, 32],
+            // Scale exponentially with zoom base 2 so the hazard maintains an accurate ~50m physical ground radius
+            "heatmap-radius": [
+              "interpolate",
+              ["exponential", 2],
+              ["zoom"],
+              10, 2,
+              12, 3,
+              14, 11,
+              18, 176
+            ],
             "heatmap-opacity": 0.82,
           },
         });
@@ -256,7 +265,7 @@ const WaterMap = () => {
           paint: {
             // Heatmap weight from contamination risk probability
             "heatmap-weight": ["interpolate", ["linear"], ["get", "weight"], 0, 0, 0.3, 0.35, 0.65, 0.75, 1.0, 1.0],
-            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 0, 0.9, 14, 2.0],
+            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 10, 0.9, 14, 1.5, 18, 2.4],
             "heatmap-color": [
               "interpolate",
               ["linear"],
@@ -267,7 +276,16 @@ const WaterMap = () => {
               0.65, "rgba(249, 115, 22, 0.85)",
               1.0, "rgba(220, 38, 38, 0.95)",
             ],
-            "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 0, 10, 14, 36],
+            // Scale exponentially with zoom base 2 so water contamination plume maintains an accurate ~65m physical ground radius
+            "heatmap-radius": [
+              "interpolate",
+              ["exponential", 2],
+              ["zoom"],
+              10, 2,
+              12, 4,
+              14, 14,
+              18, 224
+            ],
             "heatmap-opacity": 0.82,
           },
         });
