@@ -1092,16 +1092,6 @@
   height: 100% !important;
 }
 
-.mapboxgl-canvas-container {
-  width: 100% !important;
-  height: 100% !important;
-}
-
-.mapboxgl-canvas {
-  width: 100% !important;
-  height: 100% !important;
-}
-
 /* Ensure map controls are positioned correctly */
 .mapboxgl-control-container {
   position: absolute !important;
