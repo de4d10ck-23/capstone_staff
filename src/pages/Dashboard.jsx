@@ -1,67 +1,310 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Droplets, ShieldCheck, AlertTriangle, ClipboardList, CheckCircle, PlusCircle, ArrowRight, FileText } from "lucide-react";
+import { 
+  Droplets, 
+  ShieldCheck, 
+  AlertTriangle, 
+  ClipboardList, 
+  CheckCircle, 
+  PlusCircle, 
+  ArrowRight, 
+  FileText, 
+  MapPin, 
+  FileCheck, 
+  Send 
+} from "lucide-react";
 import { Link } from "react-router-dom";
 
 const Dashboard = () => {
   const { user, token, API_URL } = useAuth();
   const [stats, setStats] = useState(null);
   const [inspections, setInspections] = useState([]);
+  const [sources, setSources] = useState([]);
+  const [concerns, setConcerns] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  const isBarangay = user?.role === "barangay_official";
+  const isInspector = user?.role === "sanitization_inspector";
+  const isCHO = user?.role === "city_health_officer";
+
   useEffect(() => {
-    const fetchDashboard = async () => {
+    const fetchDashboardData = async () => {
       try {
         setLoading(true);
-        const [statsRes, inspRes] = await Promise.all([
-          fetch(`${API_URL}/analytics/overview`, {
-            headers: { Authorization: `Bearer ${token}` }
-          }),
-          fetch(`${API_URL}/inspections`, {
-            headers: { Authorization: `Bearer ${token}` }
-          })
-        ]);
 
-        const statsData = await statsRes.json();
-        const inspData = await inspRes.json();
+        if (isBarangay) {
+          // Fetch Barangay-specific data: water locations & resident reports
+          const brgyParam = encodeURIComponent(user?.barangay || "");
+          const [sourcesRes, concernsRes] = await Promise.all([
+            fetch(`${API_URL}/water-locations?barangay=${brgyParam}`),
+            fetch(`${API_URL}/resident-reports?barangay=${brgyParam}`, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+          ]);
 
-        if (statsData.success) setStats(statsData.data);
-        if (inspData.success && Array.isArray(inspData.data)) setInspections(inspData.data);
+          const sourcesData = await sourcesRes.json().catch(() => ({}));
+          const concernsData = await concernsRes.json().catch(() => ({}));
+
+          if (sourcesData.success && Array.isArray(sourcesData.data)) {
+            setSources(sourcesData.data);
+          }
+          if (concernsData.success && Array.isArray(concernsData.data)) {
+            setConcerns(concernsData.data);
+          }
+        } else {
+          // Fetch Inspector / CHO overview data
+          const [statsRes, inspRes] = await Promise.all([
+            fetch(`${API_URL}/analytics/overview`, {
+              headers: { Authorization: `Bearer ${token}` }
+            }),
+            fetch(`${API_URL}/inspections`, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+          ]);
+
+          const statsData = await statsRes.json().catch(() => ({}));
+          const inspData = await inspRes.json().catch(() => ({}));
+
+          if (statsData.success) setStats(statsData.data);
+          if (inspData.success && Array.isArray(inspData.data)) setInspections(inspData.data);
+        }
       } catch (err) {
-        console.error("Error fetching staff dashboard:", err);
+        console.error("Error fetching dashboard data:", err);
       } finally {
         setLoading(false);
       }
     };
 
-    fetchDashboard();
-  }, [token, API_URL]);
-
-  const isInspector = user?.role === "sanitization_inspector";
-  const isCHO = user?.role === "city_health_officer";
-  const isBarangay = user?.role === "barangay_official";
+    fetchDashboardData();
+  }, [user, token, API_URL, isBarangay]);
 
   const getRoleDisplayName = (role) => {
     switch (role) {
-      case 'city_health_officer':
-        return 'City Health Officer';
-      case 'sanitization_inspector':
-        return 'Sanitization Inspector';
-      case 'barangay_official':
-        return 'Barangay Official';
-      case 'admin':
-        return 'Administrator';
-      case 'resident':
-        return 'Resident';
+      case "city_health_officer":
+        return "City Health Officer";
+      case "sanitization_inspector":
+        return "Sanitization Inspector";
+      case "barangay_official":
+        return "Barangay Official";
+      case "admin":
+        return "Administrator";
+      case "resident":
+        return "Resident";
       default:
         return role
-          ? role
-              .replace(/_/g, ' ')
-              .replace(/\b\w/g, (char) => char.toUpperCase())
-          : 'Staff';
+          ? role.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+          : "Staff";
     }
   };
 
+  // -------------------------------------------------------------
+  // BARANGAY OFFICIAL DASHBOARD (My Barangay content as Dashboard)
+  // -------------------------------------------------------------
+  if (isBarangay) {
+    const safeCount = sources.filter((s) => s.status?.toLowerCase() === "safe").length;
+    const warningCount = sources.filter((s) => s.status?.toLowerCase() === "warning").length;
+    const dangerCount = sources.filter(
+      (s) => s.status?.toLowerCase() === "undrinkable" || s.status?.toLowerCase() === "contaminated"
+    ).length;
+    const pendingConcerns = concerns.filter((c) => c.status === "pending");
+
+    return (
+      <div className="space-y-8 animate-fade-in font-sans">
+        {/* Banner */}
+        <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
+                Barangay Official Station
+              </span>
+              <span className="text-xs text-white/50">•</span>
+              <span className="text-xs text-white/80 font-medium">Welcome, {user?.full_name}</span>
+            </div>
+            <h1 className="text-3xl font-extrabold text-white">Barangay {user?.barangay || "Jurisdiction"}</h1>
+            <p className="text-white/80 text-sm max-w-xl">
+              Monitor local drinking supplies, validate citizen reports, and submit official assessments directly to the City Health Officer.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Link
+              to="/validate-reports"
+              className="px-5 py-2.5 rounded-full bg-white text-blue-900 font-semibold text-xs transition-all shadow hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-1.5"
+            >
+              <FileCheck size={16} />
+              <span>Validate Reports ({pendingConcerns.length})</span>
+            </Link>
+            <Link
+              to="/submit-report"
+              className="px-5 py-2.5 rounded-full bg-cyan-400 hover:bg-cyan-300 text-slate-900 font-semibold text-xs transition-all shadow hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-1.5"
+            >
+              <Send size={15} />
+              <span>Submit Report</span>
+            </Link>
+            <Link
+              to="/map"
+              className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/30 text-white font-semibold text-xs transition-all"
+            >
+              Live Water Map
+            </Link>
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Water Stations</p>
+              <h3 className="text-3xl font-bold text-slate-900 mt-1">{sources.length}</h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <Droplets size={24} />
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Potable Safe</p>
+              <h3 className="text-3xl font-bold text-emerald-600 mt-1">{safeCount}</h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <ShieldCheck size={24} />
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Warning Points</p>
+              <h3 className="text-3xl font-bold text-amber-600 mt-1">{warningCount}</h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+              <AlertTriangle size={24} />
+            </div>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+            <div>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Citizen Concerns</p>
+              <h3 className="text-3xl font-bold text-blue-600 mt-1">{concerns.length}</h3>
+            </div>
+            <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+              <FileCheck size={24} />
+            </div>
+          </div>
+        </div>
+
+        {/* Local Stations & Recent Reports Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <div className="lg:col-span-8 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Local Water Station Status</h2>
+                <p className="text-xs text-slate-500">Registered potable water stations in Barangay {user?.barangay}</p>
+              </div>
+              <Link to="/map" className="text-xs font-semibold text-blue-600 hover:text-blue-700">
+                View on Map →
+              </Link>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider border-y border-slate-100">
+                  <tr>
+                    <th className="py-3 px-4">Station</th>
+                    <th className="py-3 px-4">Type</th>
+                    <th className="py-3 px-4">Status</th>
+                    <th className="py-3 px-4">Coliform</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {sources.length === 0 ? (
+                    <tr>
+                      <td colSpan="4" className="text-center py-8 text-slate-400">
+                        No water stations registered yet for this barangay.
+                      </td>
+                    </tr>
+                  ) : (
+                    sources.map((s) => (
+                      <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-3 px-4 font-bold text-slate-900">{s.name}</td>
+                        <td className="py-3 px-4 text-slate-600 capitalize">{s.source_type || "Deep Well"}</td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                              s.status === "safe"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : s.status === "warning"
+                                ? "bg-amber-100 text-amber-800"
+                                : "bg-red-100 text-red-800"
+                            }`}
+                          >
+                            {s.status || "Unknown"}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-slate-700">{s.coliform_count ?? 0} MPN</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="lg:col-span-4 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-900">Recent Citizen Reports</h2>
+              <Link to="/validate-reports" className="text-xs font-semibold text-blue-600 hover:text-blue-700">
+                View All →
+              </Link>
+            </div>
+
+            <div className="space-y-2.5 text-xs">
+              {concerns.length === 0 ? (
+                <p className="text-slate-400 text-center py-8">No recent concerns logged by residents.</p>
+              ) : (
+                concerns.slice(0, 5).map((c) => (
+                  <Link
+                    key={c.id}
+                    to="/validate-reports"
+                    className="block p-3.5 rounded-xl bg-slate-50 hover:bg-blue-50/50 border border-slate-100 hover:border-blue-200 space-y-1.5 transition-all group"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100 text-blue-800 capitalize border border-blue-200/60">
+                        {(c.type || c.category || "Concern").replace(/_/g, " ")}
+                      </span>
+                      <span
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize whitespace-nowrap ${
+                          c.status === "validated"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : c.status === "escalated"
+                            ? "bg-purple-100 text-purple-700"
+                            : c.status === "rejected"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-amber-100 text-amber-800"
+                        }`}
+                      >
+                        {c.status || "Pending"}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="font-bold text-slate-900 text-xs group-hover:text-blue-700 transition-colors line-clamp-1">
+                        {c.title}
+                      </p>
+                    </div>
+                  </Link>
+                ))
+              )}
+            </div>
+
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // -------------------------------------------------------------
+  // SANITIZATION INSPECTOR / CHO / ADMIN DASHBOARD
+  // -------------------------------------------------------------
   const pendingInspections = inspections.filter((i) => i.status === "pending" || i.status === "assigned");
 
   return (
@@ -76,7 +319,6 @@ const Dashboard = () => {
           <p className="text-white/80 text-sm max-w-xl">
             {isInspector && "Review assigned field inspection orders and log water laboratory testing samples."}
             {isCHO && "Review city-wide waterborne health analytics, approve medical reports, and broadcast health alerts."}
-            {isBarangay && `Overseeing water station safety and resident concerns for Barangay ${user?.barangay || "Jurisdiction"}.`}
           </p>
         </div>
 
@@ -97,14 +339,6 @@ const Dashboard = () => {
             >
               <FileText size={16} />
               <span>Review Reports</span>
-            </Link>
-          )}
-          {isBarangay && (
-            <Link
-              to="/validate-reports"
-              className="px-5 py-2.5 rounded-full bg-white text-blue-900 font-semibold text-xs transition-all shadow hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-1.5"
-            >
-              <span>Validate Reports</span>
             </Link>
           )}
           <Link
@@ -199,9 +433,15 @@ const Dashboard = () => {
                       <td className="py-3.5 px-4 font-bold text-slate-900">Brgy. {i.barangay || "Maasin"}</td>
                       <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">{i.description}</td>
                       <td className="py-3.5 px-4">
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                          isHigh ? "bg-red-100 text-red-800" : isMed ? "bg-amber-100 text-amber-800" : "bg-blue-100 text-blue-800"
-                        }`}>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            isHigh
+                              ? "bg-red-100 text-red-800"
+                              : isMed
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-blue-100 text-blue-800"
+                          }`}
+                        >
                           {i.priority || "Normal"}
                         </span>
                       </td>

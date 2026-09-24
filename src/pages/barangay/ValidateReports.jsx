@@ -27,12 +27,13 @@ const extractPhotoProof = (r) => {
 
 const cleanDesc = (r) => {
   if (!r) return "";
-  if (r.clean_description) return r.clean_description;
-  if (r.description) {
-    return r.description.replace(/\[(?:Attached )?Photo Proof:\s*https?:\/\/[^\s\]]+\]/gi, "").trim();
-  }
-  return "";
+  const raw = r.clean_description || r.description || "";
+  return raw
+    .replace(/\[(?:Attached\s+)?Photo\s+Proof:?\s*[^\]]+\]/gi, "")
+    .replace(/https?:\/\/[^\s\]]+/gi, "")
+    .trim();
 };
+
 
 const ValidateReports = () => {
   const { user, token, API_URL } = useAuth();
@@ -232,7 +233,7 @@ const ValidateReports = () => {
               <tr>
                 <th className="py-3.5 px-6">Subject / Issue</th>
                 <th className="py-3.5 px-6">Category</th>
-                <th className="py-3.5 px-6">Description & Proof</th>
+                <th className="py-3.5 px-6">Description</th>
                 <th className="py-3.5 px-6">Date</th>
                 <th className="py-3.5 px-6">Status</th>
                 <th className="py-3.5 px-6 text-right">Actions</th>
@@ -255,7 +256,6 @@ const ValidateReports = () => {
                   const isValidated = r.status === "validated";
                   const isEscalated = r.status === "escalated";
                   const isRejected = r.status === "rejected" || r.status === "dismissed";
-                  const photoUrl = extractPhotoProof(r);
                   const displayDesc = cleanDesc(r) || r.description;
                   const isBusy = actionLoading === r.id;
 
@@ -264,12 +264,6 @@ const ValidateReports = () => {
                       <td className="py-4 px-6">
                         <p className="font-bold text-slate-900 text-sm">{r.title}</p>
                         <p className="text-[11px] text-slate-500 mt-0.5">Brgy. {r.barangay}</p>
-                        {(r.latitude || r.longitude) && (
-                          <div className="inline-flex items-center gap-1 px-2 py-0.5 mt-1.5 rounded-md bg-blue-50 text-blue-700 font-mono text-[10px] border border-blue-200">
-                            <MapPin size={10} />
-                            <span>GPS: {parseFloat(r.latitude).toFixed(4)}, {parseFloat(r.longitude).toFixed(4)}</span>
-                          </div>
-                        )}
                       </td>
 
                       <td className="py-4 px-6">
@@ -280,18 +274,6 @@ const ValidateReports = () => {
 
                       <td className="py-4 px-6 text-slate-600 max-w-sm">
                         <p className="leading-relaxed truncate max-w-xs">{displayDesc}</p>
-                        {photoUrl && (
-                          <div className="mt-2 flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => setSelectedPhoto(photoUrl)}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[11px] border border-blue-200 transition-colors cursor-pointer"
-                            >
-                              <Eye size={12} />
-                              <span>Photo Proof</span>
-                            </button>
-                          </div>
-                        )}
                         {r.reason && (
                           <p className="text-[11px] text-slate-500 mt-1 italic">
                             Note: {r.reason}
@@ -318,63 +300,14 @@ const ValidateReports = () => {
                       </td>
 
                       <td className="py-4 px-6 text-right">
-                        <div className="inline-flex items-center gap-1.5 justify-end">
-                          {/* View Details Button - Available on ALL statuses */}
-                          <button
-                            onClick={() => setDetailReport(r)}
-                            className="px-2.5 py-1.5 rounded-lg border border-slate-200 hover:border-blue-300 text-slate-700 hover:text-blue-700 bg-white hover:bg-blue-50 font-semibold text-xs transition-colors flex items-center gap-1 cursor-pointer"
-                            title="View full report details"
-                          >
-                            <Eye size={13} />
-                            <span>View</span>
-                          </button>
-
-                          {/* Step 1: If Pending -> Show Validate Report button */}
-                          {isPending && (
-                            <button
-                              onClick={() => handleUpdateStatus(r.id, "validated")}
-                              disabled={isBusy}
-                              className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                              title="Validate and confirm this resident report"
-                            >
-                              <CheckCircle2 size={13} />
-                              <span>Validate</span>
-                            </button>
-                          )}
-
-                          {/* Step 2: If Validated -> Show Pass to CHU button */}
-                          {isValidated && (
-                            <button
-                              onClick={() => handleUpdateStatus(r.id, "escalated", true)}
-                              disabled={isBusy}
-                              className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 animate-pulse"
-                              title="Forward validated report to CHU (City Health Unit) with inspection ticket"
-                            >
-                              <Send size={13} />
-                              <span>Pass to CHU</span>
-                            </button>
-                          )}
-
-                          {/* Step 3: If already Escalated / Passed -> Show active badge */}
-                          {isEscalated && (
-                            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-purple-50 text-purple-700 font-semibold text-[11px] border border-purple-200">
-                              <CheckCircle2 size={12} />
-                              <span>Passed</span>
-                            </span>
-                          )}
-
-                          {/* Dismiss / Reject Button (when not yet escalated or dismissed) */}
-                          {!isEscalated && !isRejected && (
-                            <button
-                              onClick={() => setRejectModal({ open: true, reportId: r.id, reason: "" })}
-                              disabled={isBusy}
-                              className="px-2 py-1.5 rounded-lg bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-700 font-medium text-xs border border-slate-200 transition-colors cursor-pointer disabled:opacity-50"
-                              title="Dismiss Report"
-                            >
-                              Dismiss
-                            </button>
-                          )}
-                        </div>
+                        <button
+                          onClick={() => setDetailReport(r)}
+                          className="px-3.5 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-700 bg-white hover:bg-blue-50 font-semibold text-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          title="View full report details"
+                        >
+                          <Eye size={13} />
+                          <span>View</span>
+                        </button>
                       </td>
                     </tr>
                   );
@@ -382,6 +315,7 @@ const ValidateReports = () => {
               )}
             </tbody>
           </table>
+
         </div>
       </div>
 

@@ -22,8 +22,7 @@ import ViewReports from './pages/cho/ViewReports';
 // Barangay Official Pages
 import ValidateReports from './pages/barangay/ValidateReports';
 import SubmitReport from './pages/barangay/SubmitReport';
-import EscalateConcern from './pages/barangay/EscalateConcern';
-import BarangayOverview from './pages/barangay/BarangayOverview';
+
 
 // Role Guard Component
 const RoleRoute = ({ allowedRoles, children }) => {
@@ -50,9 +49,17 @@ function App() {
             {/* Shared Staff Routes */}
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="map" element={<WaterMap />} />
-            <Route path="analytics" element={<Analytics />} />
+            <Route path="analytics" element={
+              <RoleRoute allowedRoles={['sanitization_inspector', 'city_health_officer', 'admin']}>
+                <Analytics />
+              </RoleRoute>
+            } />
             <Route path="alerts" element={<Alerts />} />
-            <Route path="inspections" element={<InspectionRequests />} />
+            <Route path="inspections" element={
+              <RoleRoute allowedRoles={['sanitization_inspector', 'city_health_officer', 'admin']}>
+                <InspectionRequests />
+              </RoleRoute>
+            } />
             
             {/* Inspector Specific */}
             <Route path="endorsed-reports" element={
@@ -72,18 +79,15 @@ function App() {
             } />
 
             {/* Barangay Specific */}
-            <Route path="barangay-overview" element={
-              <RoleRoute allowedRoles={['barangay_official']}><BarangayOverview /></RoleRoute>
-            } />
+            <Route path="barangay-overview" element={<Navigate to="/dashboard" replace />} />
             <Route path="validate-reports" element={
               <RoleRoute allowedRoles={['barangay_official']}><ValidateReports /></RoleRoute>
             } />
             <Route path="submit-report" element={
               <RoleRoute allowedRoles={['barangay_official']}><SubmitReport /></RoleRoute>
             } />
-            <Route path="escalate-concern" element={
-              <RoleRoute allowedRoles={['barangay_official']}><EscalateConcern /></RoleRoute>
-            } />
+            <Route path="escalate-concern" element={<Navigate to="/submit-report" replace />} />
+
             
           </Route>
           

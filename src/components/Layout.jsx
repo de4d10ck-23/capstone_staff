@@ -25,38 +25,42 @@ const Layout = () => {
   const { user, logout } = useAuth();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const sharedNav = [
-    { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
-    { to: "/map", icon: <Map size={20} />, label: "Live Water Map" },
-    { to: "/analytics", icon: <BarChart2 size={20} />, label: "Analytics & Trends" },
-    { to: "/alerts", icon: <Bell size={20} />, label: "Broadcast Alerts & Advisories" },
-    { to: "/inspections", icon: <ClipboardList size={20} />, label: "Inspection Requests" },
-  ];
-
-  const inspectorNav = [
-    { to: "/endorsed-reports", icon: <ShieldAlert size={20} />, label: "Endorsed Reports & Sources" },
-    { to: "/water-sources", icon: <Droplets size={20} />, label: "Water Sources Registry" },
-    { to: "/generate-reports", icon: <FileText size={20} />, label: "Generate Reports" },
-  ];
-
-  const choNav = [
-    { to: "/view-reports", icon: <FileText size={20} />, label: "View Reports" },
-  ];
-
-  const barangayNav = [
-    { to: "/barangay-overview", icon: <MapPin size={20} />, label: "My Barangay" },
-    { to: "/validate-reports", icon: <FileCheck size={20} />, label: "Validate Reports" },
-    { to: "/submit-report", icon: <Send size={20} />, label: "Submit Report" },
-    { to: "/escalate-concern", icon: <AlertOctagon size={20} />, label: "Escalate Concern" },
-  ];
-
-  const getRoleNav = () => {
-    switch (user?.role) {
-      case 'sanitization_inspector': return inspectorNav;
-      case 'city_health_officer': return choNav;
-      case 'barangay_official': return barangayNav;
-      default: return [];
+  const getNavItems = () => {
+    if (user?.role === 'barangay_official') {
+      return [
+        { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
+        { to: "/map", icon: <Map size={20} />, label: "Live Water Map" },
+        { to: "/alerts", icon: <Bell size={20} />, label: "Broadcast Alerts & Advisories" },
+        { to: "/validate-reports", icon: <FileCheck size={20} />, label: "Validate Reports" },
+        { to: "/submit-report", icon: <Send size={20} />, label: "Submit Report" },
+      ];
     }
+
+    const baseNav = [
+      { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
+      { to: "/map", icon: <Map size={20} />, label: "Live Water Map" },
+      { to: "/analytics", icon: <BarChart2 size={20} />, label: "Analytics & Trends" },
+      { to: "/alerts", icon: <Bell size={20} />, label: "Broadcast Alerts & Advisories" },
+      { to: "/inspections", icon: <ClipboardList size={20} />, label: "Inspection Requests" },
+    ];
+
+    if (user?.role === 'sanitization_inspector') {
+      return [
+        ...baseNav,
+        { to: "/endorsed-reports", icon: <ShieldAlert size={20} />, label: "Endorsed Reports & Sources" },
+        { to: "/water-sources", icon: <Droplets size={20} />, label: "Water Sources Registry" },
+        { to: "/generate-reports", icon: <FileText size={20} />, label: "Generate Reports" },
+      ];
+    }
+
+    if (user?.role === 'city_health_officer') {
+      return [
+        ...baseNav,
+        { to: "/view-reports", icon: <FileText size={20} />, label: "View Reports" },
+      ];
+    }
+
+    return baseNav;
   };
 
   const getRoleDisplayName = (role) => {
@@ -80,7 +84,8 @@ const Layout = () => {
     }
   };
 
-  const navItems = [...sharedNav, ...getRoleNav()];
+  const navItems = getNavItems();
+
 
   const renderNavContent = () => (
     <>
