@@ -20,16 +20,85 @@ import {
   Shield,
   History,
   Calendar,
-  Info
+  Info,
+  HelpCircle,
+  Inbox,
+  FileText,
+  ExternalLink,
+  Eye,
+  Check,
+  Image as ImageIcon,
+  Camera,
+  ChevronLeft,
+  ChevronRight,
+  Upload
 } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { MAASIN_BARANGAYS as barangays } from "../constants/barangays";
 
+export const parseLocationPhotos = (loc) => {
+  if (!loc) return [];
+  const raw = loc.image_url || loc.photo_url || loc.photos;
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.filter(Boolean);
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.filter(Boolean);
+      } catch (e) {
+        // ignore parse error
+      }
+    }
+    if (trimmed.includes(",")) {
+      return trimmed.split(",").map((s) => s.trim()).filter((s) => s.startsWith("http"));
+    }
+    return [trimmed];
+  }
+  return [];
+};
+
+const extractPhotoProof = (r) => {
+  if (!r) return null;
+  if (r.image_url) return r.image_url;
+  if (r.photo_url) return r.photo_url;
+  if (r.description) {
+    const match = r.description.match(/\[(?:Attached )?Photo Proof:\s*(https?:\/\/[^\s\]]+)\]/i)
+      || r.description.match(/(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|webp|gif))/i);
+    if (match) return match[1];
+  }
+  return null;
+};
+
+const cleanDesc = (r) => {
+  if (!r) return "";
+  const raw = r.clean_description || r.description || "";
+  return raw
+    .replace(/\[(?:Attached\s+)?Photo\s+Proof:?\s*[^\]]+\]/gi, "")
+    .replace(/\[Inspected Source:[^\]]+\]\s*/gi, "")
+    .replace(/https?:\/\/[^\s\]]+/gi, "")
+    .trim();
+};
+
+const getSubmissionStatus = (r) => {
+  if (!r) return "pending";
+  const st = (r.status || "").toLowerCase().trim();
+  if (st === "done" || st === "registered" || st === "approved" || st === "resolved" || st === "completed") {
+    return "registered";
+  }
+  if (st === "dismissed" || st === "rejected") {
+    return "dismissed";
+  }
+  return "pending";
+};
+
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_KEY || "pk.eyJ1Ijoiamx0dCIsImEiOiJjbW9pNHBpZTgwMHB3MnFxMHNxcnY0MXBiIn0.__mzgeQcXuEDVkV6q8QNfQ";
 
 // GitHub-Style Activity Calendar Heatmap for Water Source Status Changes (Light Theme with Year Selector)
-const WaterStatusHeatmap = ({ history = [], loading = false }) => {
+const WaterStatusHeatmap = ({ history = [], loading = false, currentStatus = null }) => {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [hoveredDay, setHoveredDay] = useState(null);
@@ -46,11 +115,33 @@ const WaterStatusHeatmap = ({ history = [], loading = false }) => {
         const mm = String(d.getMonth() + 1).padStart(2, "0");
         const dd = String(d.getDate()).padStart(2, "0");
         const dateStr = `${yyyy}-${mm}-${dd}`;
-        map[dateStr] = log;
+
+        const existing = map[dateStr];
+        if (!existing) {
+          map[dateStr] = log;
+        } else {
+          const exSt = (existing.status || "").toLowerCase();
+          const newSt = (log.status || "").toLowerCase();
+
+          const isExEvaluated = exSt === "contaminated" || exSt === "undrinkable" || exSt === "warning" || exSt === "safe";
+          const isNewEvaluated = newSt === "contaminated" || newSt === "undrinkable" || newSt === "warning" || newSt === "safe";
+
+          const activeTarget = (currentStatus || "").toLowerCase();
+
+          if (!isExEvaluated && isNewEvaluated) {
+            map[dateStr] = log;
+          } else if (isExEvaluated && isNewEvaluated) {
+            if (activeTarget && (newSt === activeTarget || (activeTarget === "contaminated" && (newSt === "contaminated" || newSt === "undrinkable")))) {
+              map[dateStr] = log;
+            } else {
+              map[dateStr] = log;
+            }
+          }
+        }
       });
     }
     return map;
-  }, [history]);
+  }, [history, currentStatus]);
 
   // Collect available years from history + default range
   const availableYears = useMemo(() => {
@@ -66,13 +157,14 @@ const WaterStatusHeatmap = ({ history = [], loading = false }) => {
     return Array.from(set).sort((a, b) => b - a);
   }, [history, currentYear]);
 
-  // Count audits in selected year
+  // Count audits in selected year (only evaluated checks: safe, warning, contaminated)
   const yearAuditsCount = useMemo(() => {
     if (!Array.isArray(history)) return 0;
     return history.filter((log) => {
       if (!log.recorded_at) return false;
       const yr = new Date(log.recorded_at).getFullYear();
-      return yr === selectedYear;
+      const st = (log.status || "").toLowerCase();
+      return yr === selectedYear && st !== "unknown" && st !== "pending" && st !== "";
     }).length;
   }, [history, selectedYear]);
 
@@ -139,17 +231,24 @@ const WaterStatusHeatmap = ({ history = [], loading = false }) => {
     const status = (day.log.status || "").toLowerCase();
     const exam = (day.log.bacteriological_exam || "").toLowerCase();
 
-    if (status === "undrinkable" || status === "contaminated" || exam === "failed") {
+    // Contaminated / failed check is red
+    if (status === "contaminated" || status === "undrinkable" || exam === "failed") {
       return "bg-red-500 hover:bg-red-600 border border-red-600 shadow-xs shadow-red-500/20 cursor-pointer";
     }
+    // Warning level is amber
     if (status === "warning") {
       return "bg-amber-400 hover:bg-amber-500 border border-amber-500 shadow-xs shadow-amber-500/20 cursor-pointer";
     }
+    // Safe level is emerald
     if (status === "safe" || exam === "passed") {
       return "bg-emerald-500 hover:bg-emerald-600 border border-emerald-600 shadow-xs shadow-emerald-500/20 cursor-pointer";
     }
+    // If status is unknown, pending, or untested: don't put a color in the boxes
+    if (status === "unknown" || status === "pending" || (!status && (exam === "unknown" || exam === "untested"))) {
+      return "bg-slate-200/90 hover:border-slate-400 border border-slate-300/80 cursor-pointer";
+    }
 
-    return "bg-slate-200 border border-slate-300 cursor-pointer";
+    return "bg-slate-200/90 hover:border-slate-400 border border-slate-300/80 cursor-pointer";
   };
 
   return (
@@ -251,7 +350,7 @@ const WaterStatusHeatmap = ({ history = [], loading = false }) => {
           <div className="flex items-center gap-2">
             <span
               className={`w-2.5 h-2.5 rounded-full ${
-                !hoveredDay.log
+                !hoveredDay.log || hoveredDay.log.status === "unknown" || hoveredDay.log.status === "pending"
                   ? "bg-slate-400"
                   : hoveredDay.log.status === "undrinkable"
                   ? "bg-red-500"
@@ -270,7 +369,7 @@ const WaterStatusHeatmap = ({ history = [], loading = false }) => {
             </span>
             <span
               className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
-                !hoveredDay.log
+                !hoveredDay.log || hoveredDay.log.status === "unknown" || hoveredDay.log.status === "pending"
                   ? "bg-slate-100 text-slate-600 border border-slate-200"
                   : hoveredDay.log.status === "undrinkable"
                   ? "bg-red-50 text-red-700 border border-red-200"
@@ -282,6 +381,8 @@ const WaterStatusHeatmap = ({ history = [], loading = false }) => {
               {hoveredDay.log
                 ? hoveredDay.log.status === "undrinkable"
                   ? "Contaminated"
+                  : hoveredDay.log.status === "unknown"
+                  ? "Unknown (Not Tested)"
                   : hoveredDay.log.status
                 : "No Status Changes"}
             </span>
@@ -290,10 +391,22 @@ const WaterStatusHeatmap = ({ history = [], loading = false }) => {
           {hoveredDay.log && (
             <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-600 font-medium">
               <span>
-                E. Coli: <strong className="text-slate-900">{hoveredDay.log.e_coli_count ?? 0} CFU</strong>
-              </span>
-              <span>
-                Coliform: <strong className="text-slate-900">{hoveredDay.log.coliform_count ?? 0} MPN</strong>
+                E. Coli:{" "}
+                <strong
+                  className={
+                    hoveredDay.log.e_coli || (hoveredDay.log.e_coli_count && Number(hoveredDay.log.e_coli_count) > 0)
+                      ? "text-red-600 font-bold"
+                      : hoveredDay.log.status === "unknown" || hoveredDay.log.status === "pending"
+                      ? "text-slate-500 font-normal"
+                      : "text-emerald-700 font-bold"
+                  }
+                >
+                  {hoveredDay.log.e_coli || (hoveredDay.log.e_coli_count && Number(hoveredDay.log.e_coli_count) > 0)
+                    ? "Present"
+                    : hoveredDay.log.status === "unknown" || hoveredDay.log.status === "pending"
+                    ? "Not Tested"
+                    : "Not Present"}
+                </strong>
               </span>
               {hoveredDay.log.notes && (
                 <span className="italic truncate max-w-xs text-slate-700">
@@ -324,6 +437,9 @@ const WaterStatusHeatmap = ({ history = [], loading = false }) => {
 
 const WaterSources = () => {
   const { token, API_URL, user } = useAuth();
+  const isBrgyOfficial = user?.role === "barangay_official";
+  const userBarangay = user?.barangay || "Combado";
+
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -335,21 +451,33 @@ const WaterSources = () => {
   const [statusHistory, setStatusHistory] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
 
+  // Resident Submissions State
+  const [residentSubmissions, setResidentSubmissions] = useState([]);
+  const [submissionsLoading, setSubmissionsLoading] = useState(false);
+  const [isSubmissionsModalOpen, setIsSubmissionsModalOpen] = useState(false);
+  const [submissionsTab, setSubmissionsTab] = useState("pending"); // "pending" | "registered" | "dismissed" | "all"
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [associatedReport, setAssociatedReport] = useState(null);
+  const [dismissDialog, setDismissDialog] = useState({ open: false, reportId: null, reportTitle: "", reason: "" });
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoLightbox, setPhotoLightbox] = useState({ open: false, photos: [], index: 0, title: "" });
+
   const [formData, setFormData] = useState({
     name: "",
     source_type: "deep_well",
-    barangay: "Combado",
+    barangay: isBrgyOfficial ? userBarangay : "Combado",
     latitude: 10.1330,
     longitude: 124.8700,
     status: "safe",
+    e_coli_present: false,
     e_coli_count: 0,
     coliform_count: 0,
     bacteriological_exam: "passed",
     sample_date: "",
     sample_time: "",
-    description: ""
+    description: "",
+    photos: []
   });
-
 
   const [locating, setLocating] = useState(false);
   const [geoError, setGeoError] = useState("");
@@ -384,10 +512,15 @@ const WaterSources = () => {
   const fetchSources = async () => {
     try {
       setLoading(true);
-      const res = await fetch(`${API_URL}/water-locations`);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`${API_URL}/water-locations`, { headers });
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
-        setSources(data.data);
+        if (isBrgyOfficial && userBarangay) {
+          setSources(data.data.filter((s) => s.barangay?.toLowerCase() === userBarangay.toLowerCase()));
+        } else {
+          setSources(data.data);
+        }
       }
     } catch (err) {
       console.error("Error fetching water sources:", err);
@@ -396,49 +529,206 @@ const WaterSources = () => {
     }
   };
 
+  const fetchResidentSubmissions = async () => {
+    try {
+      setSubmissionsLoading(true);
+      const res = await fetch(`${API_URL}/resident-reports`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.data)) {
+        let list = data.data.filter(
+          (r) => r.type === "unregistered_source" || r.category === "unregistered_source"
+        );
+        if (isBrgyOfficial && userBarangay) {
+          list = list.filter((r) => !r.barangay || r.barangay.toLowerCase() === userBarangay.toLowerCase());
+        }
+        setResidentSubmissions(list);
+      }
+    } catch (err) {
+      console.error("Error fetching resident water source submissions:", err);
+    } finally {
+      setSubmissionsLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchSources();
-  }, [API_URL]);
+    fetchResidentSubmissions();
+  }, [API_URL, token]);
 
-  const handleOpenModal = (sourceToEdit = null) => {
+  const handleOpenModal = (sourceToEdit = null, prefillReport = null) => {
     setErrorMsg("");
     setSuccessMsg("");
     if (sourceToEdit) {
+      const eColiPresent = Boolean(sourceToEdit.e_coli || (sourceToEdit.e_coli_count && Number(sourceToEdit.e_coli_count) > 0));
       setEditingSource(sourceToEdit);
+      setAssociatedReport(null);
       fetchStatusHistory(sourceToEdit.id);
+      const rawStatus = (sourceToEdit.status || "safe").toLowerCase();
+      const normalizedStatus = rawStatus === "undrinkable" ? "contaminated" : rawStatus;
+
       setFormData({
         name: sourceToEdit.name || sourceToEdit.full_name || "",
         source_type: sourceToEdit.source_type || "deep_well",
-        barangay: sourceToEdit.barangay || "Combado",
+        barangay: isBrgyOfficial ? userBarangay : (sourceToEdit.barangay || "Combado"),
         latitude: sourceToEdit.latitude || 10.1330,
         longitude: sourceToEdit.longitude || 124.8700,
-        status: sourceToEdit.status || "safe",
-        e_coli_count: sourceToEdit.e_coli_count || 0,
-        coliform_count: sourceToEdit.coliform_count || 0,
-        bacteriological_exam: sourceToEdit.bacteriological_exam || "passed",
+        status: normalizedStatus,
+        e_coli_present: eColiPresent,
+        e_coli_count: eColiPresent ? 1 : 0,
+        coliform_count: eColiPresent ? 1 : 0,
+        bacteriological_exam: sourceToEdit.bacteriological_exam || (eColiPresent ? "failed" : (normalizedStatus === "safe" ? "passed" : (normalizedStatus === "unknown" ? "untested" : "failed"))),
         sample_date: sourceToEdit.sample_date || "",
         sample_time: sourceToEdit.sample_time || "",
-        description: sourceToEdit.description || sourceToEdit.notes || ""
+        description: sourceToEdit.description || sourceToEdit.notes || "",
+        photos: parseLocationPhotos(sourceToEdit)
+      });
+    } else if (prefillReport) {
+      setEditingSource(null);
+      setAssociatedReport(prefillReport);
+      setStatusHistory([]);
+
+      const combinedText = `${prefillReport.title || ""} ${prefillReport.description || ""}`.toLowerCase();
+      let guessedType = "deep_well";
+      if (combinedText.includes("spring")) guessedType = "spring";
+      else if (combinedText.includes("tap") || combinedText.includes("faucet") || combinedText.includes("piped")) guessedType = "piped_tap";
+      else if (combinedText.includes("refill") || combinedText.includes("station")) guessedType = "refilling_station";
+      else if (combinedText.includes("shallow")) guessedType = "shallow_well";
+
+      const cleanedDesc = cleanDesc(prefillReport);
+      const residentPhoto = extractPhotoProof(prefillReport);
+
+      setFormData({
+        name: prefillReport.title || "Resident Submitted Water Source",
+        source_type: guessedType,
+        barangay: isBrgyOfficial ? userBarangay : (prefillReport.barangay || userBarangay || "Combado"),
+        latitude: parseFloat(prefillReport.latitude) || 10.1330,
+        longitude: parseFloat(prefillReport.longitude) || 124.8700,
+        status: "unknown",
+        e_coli_present: false,
+        e_coli_count: 0,
+        coliform_count: 0,
+        bacteriological_exam: "passed",
+        sample_date: new Date().toISOString().split("T")[0],
+        sample_time: new Date().toTimeString().split(" ")[0].slice(0, 5),
+        description: cleanedDesc,
+        photos: residentPhoto ? [residentPhoto] : []
       });
     } else {
       setEditingSource(null);
+      setAssociatedReport(null);
       setStatusHistory([]);
       setFormData({
         name: "",
         source_type: "deep_well",
-        barangay: "Combado",
+        barangay: isBrgyOfficial ? userBarangay : "Combado",
         latitude: 10.1330,
         longitude: 124.8700,
         status: "safe",
+        e_coli_present: false,
         e_coli_count: 0,
         coliform_count: 0,
         bacteriological_exam: "passed",
         sample_date: "",
         sample_time: "",
-        description: ""
+        description: "",
+        photos: []
       });
     }
     setIsModalOpen(true);
+  };
+
+  const handlePhotoUpload = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setUploadingPhoto(true);
+    setErrorMsg("");
+
+    const uploadedUrls = [];
+    try {
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) {
+          setErrorMsg(`File "${file.name}" is not an image.`);
+          continue;
+        }
+        if (file.size > 16 * 1024 * 1024) {
+          setErrorMsg(`File "${file.name}" exceeds 16MB limit.`);
+          continue;
+        }
+
+        const bodyData = new FormData();
+        bodyData.append("file", file);
+
+        const res = await fetch(`${API_URL}/water-locations/upload-image`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          body: bodyData
+        });
+
+        const data = await res.json();
+        if (data.success && data.image_url) {
+          uploadedUrls.push(data.image_url);
+        } else {
+          console.warn("Upload response without image_url:", data);
+          setErrorMsg(data.detail || data.message || "Failed to upload photo.");
+        }
+      }
+
+      if (uploadedUrls.length > 0) {
+        setFormData((prev) => ({
+          ...prev,
+          photos: [...(prev.photos || []), ...uploadedUrls]
+        }));
+      }
+    } catch (err) {
+      console.error("Error uploading photo:", err);
+      setErrorMsg("Failed to upload photo due to a network error.");
+    } finally {
+      setUploadingPhoto(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleRemovePhoto = (indexToRemove) => {
+    setFormData((prev) => ({
+      ...prev,
+      photos: (prev.photos || []).filter((_, idx) => idx !== indexToRemove)
+    }));
+  };
+
+  const handleReviewAndRegister = (report) => {
+    setIsSubmissionsModalOpen(false);
+    handleOpenModal(null, report);
+  };
+
+  const handleDismissSubmission = async () => {
+    if (!dismissDialog.reportId) return;
+    try {
+      const res = await fetch(`${API_URL}/resident-reports/${dismissDialog.reportId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          status: "dismissed",
+          reason: dismissDialog.reason || "Dismissed by Barangay Official during Water Sources review."
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccessMsg("Resident water source submission dismissed.");
+        setDismissDialog({ open: false, reportId: null, reportTitle: "", reason: "" });
+        fetchResidentSubmissions();
+      } else {
+        setErrorMsg(data.detail || "Failed to dismiss submission.");
+      }
+    } catch (err) {
+      console.error("Error dismissing submission:", err);
+      setErrorMsg("Network error dismissing submission.");
+    }
   };
 
   // Initialize Mapbox map inside modal
@@ -639,19 +929,31 @@ const WaterSources = () => {
         : `${API_URL}/water-locations`;
       const method = editingSource ? "PUT" : "POST";
 
+      const isPresent = Boolean(formData.e_coli_present);
+      const isContaminated = formData.status === "contaminated" || formData.status === "undrinkable";
+      const isSafe = formData.status === "safe";
+      const isUnknown = formData.status === "unknown";
+
+      const finalImageUrl = (formData.photos && formData.photos.length > 0)
+        ? (formData.photos.length === 1 ? formData.photos[0] : JSON.stringify(formData.photos))
+        : null;
+
       const payload = {
         name: formData.name.trim(),
         full_name: formData.name.trim(),
         source_type: formData.source_type,
-        barangay: formData.barangay,
+        barangay: isBrgyOfficial ? userBarangay : formData.barangay,
         latitude: parseFloat(formData.latitude),
         longitude: parseFloat(formData.longitude),
-        status: formData.status,
-        e_coli_count: parseInt(formData.e_coli_count) || 0,
-        coliform_count: parseInt(formData.coliform_count) || 0,
-        e_coli: (parseInt(formData.e_coli_count) || 0) > 0,
-        coliform_bacteria: (parseInt(formData.coliform_count) || 0) > 0,
-        bacteriological_exam: formData.bacteriological_exam || (formData.status === "safe" ? "passed" : "failed"),
+        status: isContaminated ? "contaminated" : (isUnknown ? "unknown" : (isSafe ? "safe" : "warning")),
+        e_coli: isPresent,
+        coliform_bacteria: isPresent,
+        e_coli_count: isPresent ? 1 : 0,
+        coliform_count: isPresent ? 1 : 0,
+        bacteriological_exam: isPresent || isContaminated
+          ? "failed"
+          : (isUnknown ? "untested" : "passed"),
+        image_url: finalImageUrl,
         sample_date: formData.sample_date || undefined,
         sample_time: formData.sample_time || undefined,
         description: formData.description.trim(),
@@ -670,7 +972,31 @@ const WaterSources = () => {
 
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg(editingSource ? "Water station updated successfully!" : "New water station registered!");
+        if (associatedReport) {
+          try {
+            await fetch(`${API_URL}/resident-reports/${associatedReport.id}`, {
+              method: "PUT",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                status: "done",
+                reason: `Verified and registered into Barangay Water Sources Registry as "${formData.name.trim()}".`
+              })
+            });
+          } catch (repErr) {
+            console.warn("Could not auto-update resident report status:", repErr);
+          }
+          setAssociatedReport(null);
+          fetchResidentSubmissions();
+        }
+
+        setSuccessMsg(
+          associatedReport
+            ? `Water station "${formData.name.trim()}" registered and resident submission marked as Done!`
+            : (editingSource ? "Water station updated successfully!" : "New water station registered!")
+        );
         setIsModalOpen(false);
         fetchSources();
       } else {
@@ -702,12 +1028,39 @@ const WaterSources = () => {
     }
   };
 
+  const {
+    pendingSubmissionsCount,
+    registeredSubmissionsCount,
+    dismissedSubmissionsCount,
+    totalSubmissionsCount
+  } = useMemo(() => {
+    let pending = 0;
+    let registered = 0;
+    let dismissed = 0;
+    residentSubmissions.forEach((sub) => {
+      const st = getSubmissionStatus(sub);
+      if (st === "pending") pending++;
+      else if (st === "registered") registered++;
+      else if (st === "dismissed") dismissed++;
+    });
+    return {
+      pendingSubmissionsCount: pending,
+      registeredSubmissionsCount: registered,
+      dismissedSubmissionsCount: dismissed,
+      totalSubmissionsCount: residentSubmissions.length
+    };
+  }, [residentSubmissions]);
+
   const filteredSources = sources.filter((s) => {
+    if (isBrgyOfficial && userBarangay && s.barangay?.toLowerCase() !== userBarangay.toLowerCase()) {
+      return false;
+    }
     const matchQuery = s.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                        s.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                        s.barangay?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchBarangay = selectedBarangay === "all" || s.barangay === selectedBarangay;
-    const matchStatus = selectedStatus === "all" || s.status?.toLowerCase() === selectedStatus.toLowerCase();
+    const matchBarangay = isBrgyOfficial ? true : (selectedBarangay === "all" || s.barangay === selectedBarangay);
+    const sStatus = s.status?.toLowerCase() === "undrinkable" ? "contaminated" : (s.status?.toLowerCase() || "");
+    const matchStatus = selectedStatus === "all" || sStatus === selectedStatus.toLowerCase();
     return matchQuery && matchBarangay && matchStatus;
   });
 
@@ -715,16 +1068,45 @@ const WaterSources = () => {
     <div className="space-y-8 animate-fade-in font-sans">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Water Sources Registry</h1>
-          <p className="text-slate-500 text-xs mt-0.5">Manage tested water stations, wells, taps, and laboratory metrics</p>
+          <div className="flex items-center gap-2.5">
+            <h1 className="text-2xl font-bold text-slate-900">Water Sources Registry</h1>
+            {isBrgyOfficial && (
+              <span className="px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                Brgy. {userBarangay} Jurisdiction
+              </span>
+            )}
+          </div>
+          <p className="text-slate-500 text-xs mt-0.5">
+            {isBrgyOfficial
+              ? `Manage and monitor registered water stations, wells, and taps in Barangay ${userBarangay}`
+              : "Manage tested water stations, wells, taps, and laboratory metrics"}
+          </p>
         </div>
-        <button
-          onClick={() => handleOpenModal()}
-          className="inline-flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-md hover:shadow-lg transition-all cursor-pointer"
-        >
-          <Plus size={16} />
-          <span>Register New Station</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <button
+            onClick={() => setIsSubmissionsModalOpen(true)}
+            className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 px-4 py-2.5 rounded-full text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer relative"
+          >
+            <Inbox size={16} className="text-blue-600" />
+            <span>Resident Submissions</span>
+            {pendingSubmissionsCount > 0 ? (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white animate-pulse">
+                {pendingSubmissionsCount}
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                0
+              </span>
+            )}
+          </button>
+          <button
+            onClick={() => handleOpenModal()}
+            className="inline-flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-md hover:shadow-lg transition-all cursor-pointer"
+          >
+            <Plus size={16} />
+            <span>Register New Station</span>
+          </button>
+        </div>
       </div>
 
       {successMsg && (
@@ -747,7 +1129,7 @@ const WaterSources = () => {
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
           <input
             type="text"
-            placeholder="Search station or barangay..."
+            placeholder={isBrgyOfficial ? `Search stations in ${userBarangay}...` : "Search station or barangay..."}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600"
@@ -755,19 +1137,26 @@ const WaterSources = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium">Barangay:</span>
-            <select
-              value={selectedBarangay}
-              onChange={(e) => setSelectedBarangay(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none"
-            >
-              <option value="all">All Barangays</option>
-              {barangays.map((b) => (
-                <option key={b} value={b}>{b}</option>
-              ))}
-            </select>
-          </div>
+          {isBrgyOfficial ? (
+            <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl text-xs font-semibold text-blue-900">
+              <MapPin size={13} className="text-blue-600" />
+              <span>Brgy. {userBarangay}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-medium">Barangay:</span>
+              <select
+                value={selectedBarangay}
+                onChange={(e) => setSelectedBarangay(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none"
+              >
+                <option value="all">All Barangays</option>
+                {barangays.map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500 font-medium">Status:</span>
@@ -779,7 +1168,8 @@ const WaterSources = () => {
               <option value="all">All Statuses</option>
               <option value="safe">Safe Only</option>
               <option value="warning">Warning Level</option>
-              <option value="undrinkable">Contaminated</option>
+              <option value="contaminated">Contaminated</option>
+              <option value="unknown">Unknown</option>
             </select>
           </div>
         </div>
@@ -795,7 +1185,6 @@ const WaterSources = () => {
                 <th className="py-3.5 px-6">Barangay</th>
                 <th className="py-3.5 px-6">Source Type</th>
                 <th className="py-3.5 px-6">Safety Status</th>
-                <th className="py-3.5 px-6">Lab Metrics (E.Coli / Coliform)</th>
                 <th className="py-3.5 px-6">Sample Date & Time</th>
                 <th className="py-3.5 px-6 text-right">Actions</th>
               </tr>
@@ -803,21 +1192,53 @@ const WaterSources = () => {
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-10 text-slate-400">Loading water stations...</td>
+                  <td colSpan="6" className="text-center py-10 text-slate-400">Loading water stations...</td>
                 </tr>
               ) : filteredSources.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="text-center py-10 text-slate-400">No water sources found matching query.</td>
+                  <td colSpan="6" className="text-center py-10 text-slate-400">No water sources found matching query.</td>
                 </tr>
               ) : (
                 filteredSources.map((s) => {
                   const isSafe = s.status?.toLowerCase() === "safe";
                   const isWarning = s.status?.toLowerCase() === "warning";
+                  const isUnknown = s.status?.toLowerCase() === "unknown";
+                  const isContaminated = s.status?.toLowerCase() === "contaminated" || s.status?.toLowerCase() === "undrinkable";
+
+                  const displayStatus = isSafe 
+                    ? "Safe" 
+                    : isWarning 
+                    ? "Warning" 
+                    : isUnknown 
+                    ? "Unknown" 
+                    : "Contaminated";
 
                   return (
                     <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-4 px-6 font-bold text-slate-900">
-                        {s.name || s.full_name}
+                        <div className="flex items-center gap-2">
+                          <span>{s.name || s.full_name}</span>
+                          {(() => {
+                            const photos = parseLocationPhotos(s);
+                            if (photos.length === 0) return null;
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => setPhotoLightbox({
+                                  open: true,
+                                  photos,
+                                  index: 0,
+                                  title: s.name || s.full_name
+                                })}
+                                className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-700 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-full border border-blue-200 transition-colors cursor-pointer"
+                                title={`View ${photos.length} photo(s)`}
+                              >
+                                <Camera size={11} className="text-blue-600" />
+                                <span>{photos.length}</span>
+                              </button>
+                            );
+                          })()}
+                        </div>
                       </td>
                       <td className="py-4 px-6 text-slate-600 font-medium">
                         <div className="flex items-center gap-1.5">
@@ -834,14 +1255,13 @@ const WaterSources = () => {
                             ? "bg-emerald-100 text-emerald-800" 
                             : isWarning 
                             ? "bg-amber-100 text-amber-800" 
+                            : isUnknown
+                            ? "bg-slate-100 text-slate-700 border border-slate-200"
                             : "bg-red-100 text-red-800"
                         }`}>
-                          {isSafe ? <ShieldCheck size={12} /> : isWarning ? <AlertTriangle size={12} /> : <XCircle size={12} />}
-                          <span>{s.status || "Unknown"}</span>
+                          {isSafe ? <ShieldCheck size={12} /> : isWarning ? <AlertTriangle size={12} /> : isUnknown ? <HelpCircle size={12} /> : <XCircle size={12} />}
+                          <span>{displayStatus}</span>
                         </span>
-                      </td>
-                      <td className="py-4 px-6 text-slate-700">
-                        <span className="font-mono">{s.e_coli_count ?? 0} CFU</span> / <span className="font-mono">{s.coliform_count ?? 0} MPN</span>
                       </td>
                       <td className="py-4 px-6 text-slate-700 font-medium">
                         <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-800">
@@ -894,9 +1314,34 @@ const WaterSources = () => {
             </button>
 
             <h2 className="text-xl font-bold text-slate-900 mb-1">
-              {editingSource ? "Edit Water Station" : "Register Water Station"}
+              {editingSource 
+                ? "Edit Water Station" 
+                : associatedReport 
+                ? "Register Resident-Submitted Station" 
+                : "Register Water Station"}
             </h2>
-            <p className="text-xs text-slate-500 mb-5">Inspect, locate on Mapbox, and update water point parameters and laboratory metrics</p>
+            <p className="text-xs text-slate-500 mb-4">
+              {associatedReport
+                ? "Review and edit the resident's reported details and map location before registering into the official registry."
+                : "Inspect, locate on Mapbox, and update water point parameters and laboratory metrics"}
+            </p>
+
+            {associatedReport && (
+              <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-blue-900 text-xs flex items-start gap-2.5 mb-5">
+                <Info size={16} className="text-blue-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <div className="font-bold flex items-center justify-between">
+                    <span>Pre-filled from Resident Submission</span>
+                    <span className="text-[10px] text-blue-700 bg-white px-2 py-0.5 rounded-full border border-blue-200 font-semibold">
+                      Citizen Report
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-blue-800/80 mt-1">
+                    Details and GPS coordinates have been automatically loaded from the resident's report. You can modify any field or drag the map pin before submitting. Saving will register the station and mark the citizen report as <strong>Done</strong>.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
@@ -928,16 +1373,25 @@ const WaterSources = () => {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Barangay</label>
-                  <select
-                    value={formData.barangay}
-                    onChange={(e) => setFormData({ ...formData, barangay: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                  >
-                    {barangays.map((b) => (
-                      <option key={b} value={b}>{b}</option>
-                    ))}
-                  </select>
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                    Barangay {isBrgyOfficial && <span className="text-blue-600 font-bold lowercase">(assigned jurisdiction)</span>}
+                  </label>
+                  {isBrgyOfficial ? (
+                    <div className="w-full px-3.5 py-2.5 bg-blue-50/70 border border-blue-200 rounded-xl text-xs font-bold text-blue-900 flex items-center gap-2">
+                      <MapPin size={14} className="text-blue-600" />
+                      <span>Brgy. {userBarangay}</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={formData.barangay}
+                      onChange={(e) => setFormData({ ...formData, barangay: e.target.value })}
+                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
+                    >
+                      {barangays.map((b) => (
+                        <option key={b} value={b}>{b}</option>
+                      ))}
+                    </select>
+                  )}
                 </div>
               </div>
 
@@ -1035,43 +1489,57 @@ const WaterSources = () => {
               {/* Status Change Audit Trail Heatmap (shown only when editing existing station) */}
               {editingSource && (
                 <div className="pt-2 pb-1">
-                  <WaterStatusHeatmap history={statusHistory} loading={historyLoading} />
+                  <WaterStatusHeatmap 
+                    history={statusHistory} 
+                    loading={historyLoading} 
+                    currentStatus={formData.status === "undrinkable" ? "contaminated" : formData.status} 
+                  />
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Safety Status</label>
                   <select
-                    value={formData.status}
-                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
+                    value={formData.status === "undrinkable" ? "contaminated" : formData.status}
+                    onChange={(e) => {
+                      const newStatus = e.target.value;
+                      setFormData((prev) => ({
+                        ...prev,
+                        status: newStatus,
+                        e_coli_present: (newStatus === "contaminated" || newStatus === "undrinkable") ? true : (newStatus === "safe" ? false : prev.e_coli_present)
+                      }));
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
                   >
                     <option value="safe">Safe</option>
                     <option value="warning">Warning Level</option>
-                    <option value="undrinkable">Contaminated</option>
+                    <option value="contaminated">Contaminated</option>
+                    <option value="unknown">Unknown</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">E. Coli (CFU/100ml)</label>
-                  <input
-                    type="number"
-                    value={formData.e_coli_count}
-                    onChange={(e) => setFormData({ ...formData, e_coli_count: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Coliform (MPN/100ml)</label>
-                  <input
-                    type="number"
-                    value={formData.coliform_count}
-                    onChange={(e) => setFormData({ ...formData, coliform_count: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                  />
+                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                    E. Coli Presence
+                  </label>
+                  <select
+                    value={formData.e_coli_present ? "present" : "not_present"}
+                    onChange={(e) => {
+                      const isPresent = e.target.value === "present";
+                      setFormData((prev) => ({
+                        ...prev,
+                        e_coli_present: isPresent,
+                        e_coli_count: isPresent ? 1 : 0,
+                        coliform_count: isPresent ? 1 : 0,
+                        status: isPresent && prev.status === "safe" ? "contaminated" : prev.status
+                      }));
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
+                  >
+                    <option value="not_present">Not Present</option>
+                    <option value="present">Present</option>
+                  </select>
                 </div>
               </div>
 
@@ -1108,6 +1576,94 @@ const WaterSources = () => {
                 />
               </div>
 
+              {/* Water Source Photos Section (1 or more) */}
+              <div className="space-y-2 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700">
+                      Water Source Photos (1 or more)
+                    </label>
+                    <p className="text-[11px] text-slate-500">
+                      Upload physical photos of the water source, station, well, or tap. These will be viewable on the public map.
+                    </p>
+                  </div>
+                  {formData.photos && formData.photos.length > 0 && (
+                    <span className="text-[11px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                      {formData.photos.length} {formData.photos.length === 1 ? "Photo" : "Photos"}
+                    </span>
+                  )}
+                </div>
+
+                {/* Thumbnail Previews Grid */}
+                {formData.photos && formData.photos.length > 0 && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                    {formData.photos.map((photoUrl, pIdx) => (
+                      <div
+                        key={pIdx}
+                        className="relative group rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-video shadow-xs hover:shadow-md transition-all"
+                      >
+                        <img
+                          src={photoUrl}
+                          alt={`Water source ${pIdx + 1}`}
+                          className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-200"
+                          onClick={() => setPhotoLightbox({
+                            open: true,
+                            photos: formData.photos,
+                            index: pIdx,
+                            title: formData.name || "Water Source Photo"
+                          })}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemovePhoto(pIdx)}
+                          className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-80 hover:opacity-100 shadow-md cursor-pointer transition-opacity"
+                          title="Remove photo"
+                        >
+                          <X size={12} />
+                        </button>
+                        <div className="absolute bottom-1 left-1 bg-slate-900/70 text-white text-[9px] font-bold px-1.5 py-0.5 rounded backdrop-blur-xs pointer-events-none">
+                          #{pIdx + 1}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Upload Button Box */}
+                <div className="pt-1">
+                  <label className={`w-full py-3 px-4 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                    uploadingPhoto
+                      ? "border-blue-400 bg-blue-50/50 pointer-events-none"
+                      : "border-slate-300 hover:border-blue-500 bg-slate-50/60 hover:bg-blue-50/30 text-slate-600 hover:text-blue-700"
+                  }`}>
+                    <input
+                      type="file"
+                      multiple
+                      accept="image/*"
+                      onChange={handlePhotoUpload}
+                      disabled={uploadingPhoto}
+                      className="hidden"
+                    />
+                    {uploadingPhoto ? (
+                      <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 py-1">
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>Uploading photo(s) to storage...</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex items-center gap-2 text-xs font-semibold">
+                          <Camera size={16} className="text-blue-600" />
+                          <span>Click to Upload Photo(s)</span>
+                        </div>
+                        <span className="text-[10px] text-slate-400">
+                          Supports PNG, JPG, JPEG, WEBP (You can select multiple photos)
+                        </span>
+                      </>
+                    )}
+                  </label>
+                </div>
+              </div>
+
               <div className="pt-4 flex gap-3">
                 <button
                   type="button"
@@ -1120,10 +1676,439 @@ const WaterSources = () => {
                   type="submit"
                   className="w-1/2 py-2.5 rounded-full bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs shadow-md cursor-pointer"
                 >
-                  {editingSource ? "Save Changes" : "Register Station"}
+                  {editingSource ? "Save Changes" : associatedReport ? "Confirm & Register Station" : "Register Station"}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Resident Submissions Modal */}
+      {isSubmissionsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative animate-fade-in max-h-[92vh] flex flex-col">
+            <button
+              onClick={() => setIsSubmissionsModalOpen(false)}
+              className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 cursor-pointer"
+            >
+              <X size={20} />
+            </button>
+
+            {/* Modal Header */}
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl">
+                <Inbox size={22} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-slate-900">Resident-Submitted Water Sources</h2>
+                <p className="text-xs text-slate-500">
+                  Review new water sources reported by community residents in {isBrgyOfficial ? `Brgy. ${userBarangay}` : "your jurisdiction"}.
+                </p>
+              </div>
+            </div>
+
+            {/* Submissions Filter Tabs */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 pt-3 pb-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setSubmissionsTab("pending")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                  submissionsTab === "pending"
+                    ? "bg-blue-900 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <span>Pending Review</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  submissionsTab === "pending" ? "bg-amber-500 text-white font-black" : "bg-white text-slate-600 border border-slate-200"
+                }`}>
+                  {pendingSubmissionsCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSubmissionsTab("registered")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                  submissionsTab === "registered"
+                    ? "bg-blue-900 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <span>Registered</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  submissionsTab === "registered" ? "bg-emerald-600 text-white font-black" : "bg-white text-slate-600 border border-slate-200"
+                }`}>
+                  {registeredSubmissionsCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSubmissionsTab("dismissed")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                  submissionsTab === "dismissed"
+                    ? "bg-blue-900 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <span>Dismissed</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  submissionsTab === "dismissed" ? "bg-slate-700 text-white font-black" : "bg-white text-slate-600 border border-slate-200"
+                }`}>
+                  {dismissedSubmissionsCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setSubmissionsTab("all")}
+                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-2 ${
+                  submissionsTab === "all"
+                    ? "bg-blue-900 text-white shadow-sm"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                <span>All</span>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                  submissionsTab === "all" ? "bg-blue-800 text-white" : "bg-white text-slate-600 border border-slate-200"
+                }`}>
+                  {totalSubmissionsCount}
+                </span>
+              </button>
+            </div>
+
+            {/* Submissions Content Body */}
+            <div className="flex-1 overflow-y-auto space-y-4 pr-1">
+              {submissionsLoading ? (
+                <div className="py-16 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+                  <Loader2 size={24} className="animate-spin text-blue-600" />
+                  <span className="text-xs">Loading resident submissions...</span>
+                </div>
+              ) : (() => {
+                const filteredList = residentSubmissions.filter((s) => {
+                  const normStatus = getSubmissionStatus(s);
+                  if (submissionsTab === "pending") return normStatus === "pending";
+                  if (submissionsTab === "registered") return normStatus === "registered";
+                  if (submissionsTab === "dismissed") return normStatus === "dismissed";
+                  return true; // "all"
+                });
+
+                if (filteredList.length === 0) {
+                  let emptyTitle = "No resident submissions found.";
+                  let emptyDesc = "Any unregistered water sources submitted by residents will appear here.";
+                  if (submissionsTab === "pending") {
+                    emptyTitle = "No pending resident submissions.";
+                    emptyDesc = "All resident water source submissions have been reviewed and processed.";
+                  } else if (submissionsTab === "registered") {
+                    emptyTitle = "No registered submissions.";
+                    emptyDesc = "Submissions that were approved and registered into the water sources registry will appear here.";
+                  } else if (submissionsTab === "dismissed") {
+                    emptyTitle = "No dismissed submissions.";
+                    emptyDesc = "Dismissed or archived submissions will appear here.";
+                  }
+
+                  return (
+                    <div className="py-16 text-center text-slate-400 flex flex-col items-center justify-center gap-2">
+                      <Inbox size={36} className="text-slate-300" />
+                      <p className="text-sm font-semibold text-slate-600">{emptyTitle}</p>
+                      <p className="text-xs text-slate-400">{emptyDesc}</p>
+                    </div>
+                  );
+                }
+
+                return filteredList.map((sub) => {
+                  const photoUrl = extractPhotoProof(sub);
+                  const desc = cleanDesc(sub);
+                  const normStatus = getSubmissionStatus(sub);
+                  const isPending = normStatus === "pending";
+                  const isDone = normStatus === "registered";
+                  const isDismissed = normStatus === "dismissed";
+
+                  return (
+                    <div
+                      key={sub.id}
+                      className="p-5 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-md transition-shadow flex flex-col sm:flex-row gap-4 justify-between items-start"
+                    >
+                      <div className="space-y-2 flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="text-sm font-bold text-slate-900">{sub.title || "Water Source"}</h3>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                            isPending
+                              ? "bg-amber-100 text-amber-800 border border-amber-200"
+                              : isDone
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              : "bg-slate-100 text-slate-600 border border-slate-200"
+                          }`}>
+                            {isPending ? "Pending Review" : isDone ? "Registered" : "Dismissed"}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                          <div className="flex items-center gap-1 font-medium text-blue-900 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                            <MapPin size={12} className="text-blue-600" />
+                            <span>Brgy. {sub.barangay}</span>
+                          </div>
+
+                          <div className="font-mono text-[11px] bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200 text-slate-700">
+                            Lat: {parseFloat(sub.latitude || 0).toFixed(6)}, Lng: {parseFloat(sub.longitude || 0).toFixed(6)}
+                          </div>
+
+                          {sub.created_at && (
+                            <div className="flex items-center gap-1 text-[11px] text-slate-400">
+                              <Clock size={11} />
+                              <span>{new Date(sub.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {desc && (
+                          <p className="text-xs text-slate-600 leading-relaxed bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
+                            {desc}
+                          </p>
+                        )}
+
+                        {sub.reason && (
+                          <p className="text-xs italic text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                            <strong>Note:</strong> {sub.reason}
+                          </p>
+                        )}
+
+                        {photoUrl && (
+                          <div className="pt-1">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPhoto(photoUrl)}
+                              className="inline-flex items-center gap-2 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-50/80 hover:bg-blue-100/80 px-3 py-1.5 rounded-xl border border-blue-200 transition-colors cursor-pointer"
+                            >
+                              <ImageIcon size={14} className="text-blue-600" />
+                              <span>View Attached Photo Proof</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex sm:flex-col items-center sm:items-end gap-2 w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                        {isPending ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleReviewAndRegister(sub)}
+                              className="w-full sm:w-auto px-4 py-2 rounded-xl bg-blue-900 hover:bg-blue-800 text-white text-xs font-semibold shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                            >
+                              <Plus size={14} />
+                              <span>Add to Registry</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setDismissDialog({ open: true, reportId: sub.id, reportTitle: sub.title || "Water Source", reason: "" })}
+                              className="w-full sm:w-auto px-3.5 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap"
+                            >
+                              <XCircle size={14} />
+                              <span>Dismiss</span>
+                            </button>
+                          </>
+                        ) : isDone ? (
+                          <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200">
+                            <CheckCircle size={13} />
+                            <span>Registered</span>
+                          </span>
+                        ) : (
+                          <div className="flex flex-col sm:items-end gap-1.5">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+                              <XCircle size={13} />
+                              <span>Archived in History</span>
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleReviewAndRegister(sub)}
+                              className="text-[11px] text-blue-600 hover:text-blue-800 hover:underline flex items-center gap-1 font-medium cursor-pointer"
+                            >
+                              <Plus size={12} />
+                              <span>Register anyway</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsSubmissionsModalOpen(false)}
+                className="px-5 py-2 rounded-full border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dismiss Confirmation Dialog */}
+      {dismissDialog.open && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 relative animate-fade-in space-y-4">
+            <h3 className="text-base font-bold text-slate-900">Dismiss Water Source Submission</h3>
+            <p className="text-xs text-slate-600">
+              Are you sure you want to dismiss <strong>"{dismissDialog.reportTitle}"</strong>? This will archive the report and notify the resident.
+            </p>
+
+            <div>
+              <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-600 mb-1">
+                Reason / Note for Resident (Optional)
+              </label>
+              <textarea
+                rows={2}
+                value={dismissDialog.reason}
+                onChange={(e) => setDismissDialog({ ...dismissDialog, reason: e.target.value })}
+                placeholder="e.g. Duplicate point, invalid coordinates, private inaccessible source..."
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-red-500"
+              />
+            </div>
+
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setDismissDialog({ open: false, reportId: null, reportTitle: "", reason: "" })}
+                className="w-1/2 py-2.5 rounded-full border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDismissSubmission}
+                className="w-1/2 py-2.5 rounded-full bg-red-600 hover:bg-red-700 text-white font-semibold text-xs shadow-md cursor-pointer"
+              >
+                Confirm Dismiss
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Photo Proof Lightbox Modal */}
+      {selectedPhoto && (
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div 
+            className="bg-white rounded-3xl p-4 max-w-2xl w-full shadow-2xl relative overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h4 className="text-xs font-bold text-slate-800">Attached Proof Photo</h4>
+              <button 
+                onClick={() => setSelectedPhoto(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+            <div className="pt-3 max-h-[75vh] flex items-center justify-center overflow-hidden rounded-xl bg-slate-950">
+              <img 
+                src={selectedPhoto} 
+                alt="Water Source Photo Proof" 
+                className="max-h-[70vh] w-auto object-contain rounded-lg"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Water Source Multi-Photo Lightbox Modal */}
+      {photoLightbox.open && photoLightbox.photos && photoLightbox.photos.length > 0 && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 cursor-pointer animate-fade-in"
+          onClick={() => setPhotoLightbox({ open: false, photos: [], index: 0, title: "" })}
+        >
+          <div
+            className="bg-white rounded-3xl p-5 sm:p-6 max-w-2xl w-full shadow-2xl relative overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Camera size={16} className="text-blue-600" />
+                <h4 className="text-xs sm:text-sm font-bold text-slate-900">{photoLightbox.title || "Water Source Photos"}</h4>
+                <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                  {photoLightbox.index + 1} of {photoLightbox.photos.length}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPhotoLightbox({ open: false, photos: [], index: 0, title: "" })}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="relative mt-3 flex items-center justify-center bg-slate-950 rounded-2xl overflow-hidden min-h-[300px] max-h-[65vh]">
+              <img
+                src={photoLightbox.photos[photoLightbox.index]}
+                alt={`Photo ${photoLightbox.index + 1}`}
+                className="max-h-[60vh] w-auto object-contain rounded-lg transition-all"
+              />
+
+              {photoLightbox.photos.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPhotoLightbox((prev) => ({
+                        ...prev,
+                        index: (prev.index - 1 + prev.photos.length) % prev.photos.length
+                      }));
+                    }}
+                    className="absolute left-3 p-2.5 rounded-full bg-slate-900/75 hover:bg-slate-900 text-white backdrop-blur-sm cursor-pointer transition-transform hover:scale-110 shadow-lg"
+                    title="Previous photo"
+                  >
+                    <ChevronLeft size={22} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPhotoLightbox((prev) => ({
+                        ...prev,
+                        index: (prev.index + 1) % prev.photos.length
+                      }));
+                    }}
+                    className="absolute right-3 p-2.5 rounded-full bg-slate-900/75 hover:bg-slate-900 text-white backdrop-blur-sm cursor-pointer transition-transform hover:scale-110 shadow-lg"
+                    title="Next photo"
+                  >
+                    <ChevronRight size={22} />
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Thumbnail Navigation Row */}
+            {photoLightbox.photos.length > 1 && (
+              <div className="flex gap-2 pt-3 overflow-x-auto justify-center">
+                {photoLightbox.photos.map((url, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setPhotoLightbox((prev) => ({ ...prev, index: idx }))}
+                    className={`w-14 h-14 rounded-xl overflow-hidden border-2 transition-all cursor-pointer shrink-0 ${
+                      photoLightbox.index === idx ? "border-blue-600 scale-105 shadow-md" : "border-slate-200 opacity-60 hover:opacity-100"
+                    }`}
+                  >
+                    <img src={url} alt={`Thumb ${idx + 1}`} className="w-full h-full object-cover" />
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}

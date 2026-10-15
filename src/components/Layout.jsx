@@ -32,6 +32,7 @@ const Layout = () => {
         { to: "/map", icon: <Map size={20} />, label: "Live Water Map" },
         { to: "/alerts", icon: <Bell size={20} />, label: "Broadcast Alerts & Advisories" },
         { to: "/validate-reports", icon: <FileCheck size={20} />, label: "Validate Reports" },
+        { to: "/water-sources", icon: <Droplets size={20} />, label: "Water Sources Registry" },
         { to: "/submit-report", icon: <Send size={20} />, label: "Submit Report" },
       ];
     }

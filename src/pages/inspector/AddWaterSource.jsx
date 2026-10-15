@@ -12,6 +12,7 @@ const AddWaterSource = () => {
     latitude: 10.1330,
     longitude: 124.8700,
     status: "safe",
+    e_coli_present: false,
     e_coli_count: 0,
     coliform_count: 0,
     description: ""
@@ -28,12 +29,16 @@ const AddWaterSource = () => {
     setIsSubmitting(true);
 
     try {
+      const isPresent = Boolean(formData.e_coli_present);
       const payload = {
         ...formData,
         latitude: parseFloat(formData.latitude),
         longitude: parseFloat(formData.longitude),
-        e_coli_count: parseInt(formData.e_coli_count) || 0,
-        coliform_count: parseInt(formData.coliform_count) || 0
+        e_coli: isPresent,
+        e_coli_count: isPresent ? 1 : 0,
+        coliform_count: isPresent ? 1 : 0,
+        coliform_bacteria: isPresent,
+        bacteriological_exam: isPresent ? "failed" : "passed"
       };
 
       const res = await fetch(`${API_URL}/water-locations`, {
@@ -55,6 +60,7 @@ const AddWaterSource = () => {
           latitude: 10.1330,
           longitude: 124.8700,
           status: "safe",
+          e_coli_present: false,
           e_coli_count: 0,
           coliform_count: 0,
           description: ""
@@ -175,39 +181,49 @@ const AddWaterSource = () => {
 
 
 
-          <div className="grid grid-cols-3 gap-4">
-
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Safety Status</label>
               <select
                 value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
+                onChange={(e) => {
+                  const newStatus = e.target.value;
+                  setFormData((prev) => ({
+                    ...prev,
+                    status: newStatus,
+                    e_coli_present: (newStatus === "contaminated" || newStatus === "undrinkable") ? true : (newStatus === "safe" ? false : prev.e_coli_present)
+                  }));
+                }}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
               >
                 <option value="safe">Safe</option>
                 <option value="warning">Warning</option>
-                <option value="undrinkable">Contaminated</option>
+                <option value="contaminated">Contaminated</option>
+                <option value="unknown">Unknown</option>
               </select>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Coliform Count</label>
-              <input
-                type="number"
-                value={formData.coliform_count}
-                onChange={(e) => setFormData({ ...formData, coliform_count: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">E. Coli Count</label>
-              <input
-                type="number"
-                value={formData.e_coli_count}
-                onChange={(e) => setFormData({ ...formData, e_coli_count: e.target.value })}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-              />
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                E. Coli Presence
+              </label>
+              <select
+                value={formData.e_coli_present ? "present" : "not_present"}
+                onChange={(e) => {
+                  const isPresent = e.target.value === "present";
+                  setFormData((prev) => ({
+                    ...prev,
+                    e_coli_present: isPresent,
+                    e_coli_count: isPresent ? 1 : 0,
+                    coliform_count: isPresent ? 1 : 0,
+                    status: isPresent && prev.status === "safe" ? "contaminated" : prev.status
+                  }));
+                }}
+                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
+              >
+                <option value="not_present">Not Present</option>
+                <option value="present">Present</option>
+              </select>
             </div>
           </div>
 

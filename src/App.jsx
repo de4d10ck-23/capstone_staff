@@ -66,7 +66,7 @@ function App() {
               <RoleRoute allowedRoles={['sanitization_inspector']}><EndorsedReports /></RoleRoute>
             } />
             <Route path="water-sources" element={
-              <RoleRoute allowedRoles={['sanitization_inspector']}><WaterSources /></RoleRoute>
+              <RoleRoute allowedRoles={['sanitization_inspector', 'barangay_official', 'admin']}><WaterSources /></RoleRoute>
             } />
             <Route path="add-water-source" element={<Navigate to="/water-sources" replace />} />
             <Route path="generate-reports" element={

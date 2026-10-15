@@ -213,7 +213,7 @@ const Dashboard = () => {
                     <th className="py-3 px-4">Station</th>
                     <th className="py-3 px-4">Type</th>
                     <th className="py-3 px-4">Status</th>
-                    <th className="py-3 px-4">Coliform</th>
+                    <th className="py-3 px-4">E. Coli Presence</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -224,26 +224,41 @@ const Dashboard = () => {
                       </td>
                     </tr>
                   ) : (
-                    sources.map((s) => (
-                      <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="py-3 px-4 font-bold text-slate-900">{s.name}</td>
-                        <td className="py-3 px-4 text-slate-600 capitalize">{s.source_type || "Deep Well"}</td>
-                        <td className="py-3 px-4">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              s.status === "safe"
-                                ? "bg-emerald-100 text-emerald-800"
-                                : s.status === "warning"
-                                ? "bg-amber-100 text-amber-800"
-                                : "bg-red-100 text-red-800"
-                            }`}
-                          >
-                            {s.status || "Unknown"}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 font-mono text-slate-700">{s.coliform_count ?? 0} MPN</td>
-                      </tr>
-                    ))
+                    sources.map((s) => {
+                      const hasEColi = Boolean(s.e_coli || (s.e_coli_count && Number(s.e_coli_count) > 0) || s.status === "undrinkable");
+                      return (
+                        <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
+                          <td className="py-3 px-4 font-bold text-slate-900">{s.name}</td>
+                          <td className="py-3 px-4 text-slate-600 capitalize">{s.source_type || "Deep Well"}</td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                s.status === "safe"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : s.status === "warning"
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-red-100 text-red-800"
+                              }`}
+                            >
+                              {s.status || "Unknown"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            {hasEColi ? (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-800 border border-red-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                Present
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                Not Present
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -278,6 +293,8 @@ const Dashboard = () => {
                             ? "bg-emerald-100 text-emerald-700"
                             : c.status === "escalated"
                             ? "bg-purple-100 text-purple-700"
+                            : c.status === "done" || c.status === "resolved"
+                            ? "bg-blue-100 text-blue-700"
                             : c.status === "rejected"
                             ? "bg-red-100 text-red-700"
                             : "bg-amber-100 text-amber-800"

@@ -31,7 +31,10 @@ const getDisplayDescription = (r) => {
   if (!r) return "";
   if (r.clean_description) return r.clean_description;
   if (r.description) {
-    return r.description.replace(/\[(?:Attached )?Photo Proof:\s*https?:\/\/[^\s\]]+\]/gi, "").trim();
+    return r.description
+      .replace(/\[(?:Attached )?Photo Proof:\s*https?:\/\/[^\s\]]+\]/gi, "")
+      .replace(/\[Inspected Source:[^\]]+\]\s*/gi, "")
+      .trim();
   }
   return "";
 };
@@ -109,8 +112,9 @@ const ReportDetailModal = ({
 
   const isPending = !report.status || report.status === "pending";
   const isValidated = report.status === "validated";
-  const isEscalated = report.status === "escalated";
-  const isRejected = report.status === "rejected" || report.status === "dismissed";
+  const isEscalated = report.status === "escalated" || report.status === "passed_to_chu";
+  const isDone = report.status === "done" || report.status === "resolved" || report.status === "completed";
+  const isDismissed = report.status === "dismissed" || report.status === "rejected";
   const isBusy = actionLoading === report.id;
 
   return (
@@ -130,12 +134,20 @@ const ReportDetailModal = ({
                   ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                   : isEscalated
                   ? "bg-purple-100 text-purple-800 border border-purple-200"
+                  : isDone
+                  ? "bg-blue-100 text-blue-800 border border-blue-200"
+                  : isDismissed
+                  ? "bg-rose-100 text-rose-800 border border-rose-200"
                   : "bg-slate-100 text-slate-700 border border-slate-200"
               }`}>
                 {isEscalated
                   ? "Passed to CHU"
                   : isValidated
                   ? "Validated"
+                  : isDone
+                  ? "Done"
+                  : isDismissed
+                  ? "Dismissed"
                   : report.status || "Pending Review"}
               </span>
             </div>
@@ -204,10 +216,6 @@ const ReportDetailModal = ({
 
           <div className="relative w-full h-64 rounded-2xl overflow-hidden border border-slate-300 shadow-inner">
             <div ref={mapContainer} className="w-full h-full" />
-            <div className="absolute top-3 left-3 bg-slate-900/85 backdrop-blur-md px-3 py-1.5 rounded-xl text-white text-[11px] font-mono shadow-md border border-white/15 pointer-events-none flex items-center gap-2 z-10">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-              <span>Exact Coordinates Pinpoint</span>
-            </div>
           </div>
         </div>
 
@@ -281,50 +289,80 @@ const ReportDetailModal = ({
 
           {isStaff && (
             <div className="flex items-center gap-2">
-              {/* If Pending: Validate Button */}
+              {/* If Pending: Validate Button & Dismiss Button */}
               {isPending && (
-                <button
-                  type="button"
-                  onClick={() => onUpdateStatus(report.id, "validated")}
-                  disabled={isBusy}
-                  className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                >
-                  <CheckCircle2 size={14} />
-                  <span>Validate Report</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onUpdateStatus(report.id, "validated")}
+                    disabled={isBusy}
+                    className="px-5 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <CheckCircle2 size={14} />
+                    <span>Validate Report</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onOpenRejectModal) {
+                        onOpenRejectModal(report.id);
+                      } else {
+                        onUpdateStatus(report.id, "dismissed");
+                      }
+                    }}
+                    disabled={isBusy}
+                    className="px-4 py-2.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <X size={14} />
+                    <span>Dismiss</span>
+                  </button>
+                </>
               )}
 
-              {/* If Validated: Pass to CHU Button */}
+              {/* If Validated: Pass to CHU Button & Done Button */}
               {isValidated && (
-                <button
-                  type="button"
-                  onClick={() => onUpdateStatus(report.id, "escalated", true)}
-                  disabled={isBusy}
-                  className="px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50 animate-pulse"
-                >
-                  <Send size={14} />
-                  <span>Pass to CHU</span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onUpdateStatus(report.id, "escalated", true)}
+                    disabled={isBusy}
+                    className="px-5 py-2.5 rounded-full bg-purple-600 hover:bg-purple-700 text-white font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <Send size={14} />
+                    <span>Pass to CHU</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onUpdateStatus(report.id, "done")}
+                    disabled={isBusy}
+                    className="px-5 py-2.5 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <CheckCircle2 size={14} />
+                    <span>Done</span>
+                  </button>
+                </>
               )}
 
               {/* If Escalated: Show active badge */}
               {isEscalated && (
-                <span className="inline-flex items-center gap-1 px-4 py-2 rounded-full bg-purple-50 text-purple-700 font-semibold text-xs border border-purple-200">
+                <span className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full bg-purple-50 text-purple-700 font-semibold text-[11px] border border-purple-200">
                   <CheckCircle2 size={13} />
-                  <span>Passed to CHU ✓</span>
+                  <span>Passed to CHU</span>
                 </span>
               )}
 
-              {/* Dismiss Button */}
-              {!isEscalated && !isRejected && (
-                <button
-                  type="button"
-                  onClick={() => onOpenRejectModal(report.id)}
-                  disabled={isBusy}
-                  className="px-4 py-2.5 rounded-full bg-red-50 hover:bg-red-100 text-red-700 font-semibold text-xs border border-red-200 transition-colors cursor-pointer disabled:opacity-50"
-                >
-                  Dismiss Report
-                </button>
+              {/* If Done: Show active badge */}
+              {isDone && (
+                <span className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-blue-50 text-blue-700 font-semibold text-[11px] border border-blue-200">
+                  <span>Marked as Done</span>
+                </span>
+              )}
+
+              {/* If Dismissed: Show active badge */}
+              {isDismissed && (
+                <span className="inline-flex items-center px-3.5 py-1.5 rounded-full bg-rose-50 text-rose-700 font-semibold text-[11px] border border-rose-200">
+                  <span>Dismissed</span>
+                </span>
               )}
             </div>
           )}

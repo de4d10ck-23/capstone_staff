@@ -30,6 +30,7 @@ const cleanDesc = (r) => {
   const raw = r.clean_description || r.description || "";
   return raw
     .replace(/\[(?:Attached\s+)?Photo\s+Proof:?\s*[^\]]+\]/gi, "")
+    .replace(/\[Inspected Source:[^\]]+\]\s*/gi, "")
     .replace(/https?:\/\/[^\s\]]+/gi, "")
     .trim();
 };
@@ -39,10 +40,11 @@ const ValidateReports = () => {
   const { user, token, API_URL } = useAuth();
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [doneFilter, setDoneFilter] = useState("all"); // "all" | "done" | "dismissed"
+  const [dismissModal, setDismissModal] = useState({ open: false, reportId: null, reason: "" });
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [detailReport, setDetailReport] = useState(null);
-  const [rejectModal, setRejectModal] = useState({ open: false, reportId: null, reason: "" });
   const [actionLoading, setActionLoading] = useState(null);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
@@ -55,7 +57,11 @@ const ValidateReports = () => {
       });
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
-        setReports(data.data);
+        // Exclude unregistered_source since new water sources are now reviewed directly in the Water Sources Registry
+        const waterConcernsOnly = data.data.filter(
+          (r) => r.type !== "unregistered_source" && r.category !== "unregistered_source"
+        );
+        setReports(waterConcernsOnly);
       }
     } catch (err) {
       console.error("Error fetching resident reports:", err);
@@ -92,14 +98,16 @@ const ValidateReports = () => {
         if (passToInspector || newStatus === "escalated") {
           setSuccessMsg("Validated report passed directly to City Health Unit (CHU)! An active inspection ticket has been generated.");
         } else if (newStatus === "validated") {
-          setSuccessMsg("Report verified & validated! You can now click 'Pass to CHU' to dispatch to the City Health Unit.");
-        } else if (newStatus === "rejected") {
-          setSuccessMsg("Report dismissed.");
+          setSuccessMsg("Report verified & validated! You can now choose 'Pass to CHU' or mark as 'Done'.");
+        } else if (newStatus === "done") {
+          setSuccessMsg("Report marked as Done and archived in Done History.");
+        } else if (newStatus === "dismissed" || newStatus === "rejected") {
+          setSuccessMsg("Report dismissed and archived in Done History.");
         } else {
           setSuccessMsg(`Report status updated to ${newStatus}.`);
         }
         
-        // If modal was open for this report, update its state or close
+        // If modal was open for this report, update its state
         if (detailReport && detailReport.id === reportId) {
           setDetailReport({
             ...detailReport,
@@ -120,18 +128,27 @@ const ValidateReports = () => {
     }
   };
 
+  const pendingCount = reports.filter((r) => !r.status || r.status === "pending").length;
+  const validatedCount = reports.filter((r) => r.status === "validated").length;
+  const doneCount = reports.filter((r) => r.status === "done" || r.status === "resolved" || r.status === "completed").length;
+  const dismissedCount = reports.filter((r) => r.status === "dismissed" || r.status === "rejected").length;
+  const doneHistoryTotal = doneCount + dismissedCount;
+  const escalatedCount = reports.filter((r) => r.status === "escalated" || r.status === "passed_to_chu").length;
+
   const filteredReports = reports.filter((r) => {
     if (statusFilter === "all") return true;
     if (statusFilter === "pending") return !r.status || r.status === "pending";
     if (statusFilter === "validated") return r.status === "validated";
-    if (statusFilter === "escalated") return r.status === "escalated";
-    if (statusFilter === "rejected") return r.status === "rejected" || r.status === "dismissed";
+    if (statusFilter === "escalated") return r.status === "escalated" || r.status === "passed_to_chu";
+    if (statusFilter === "done") {
+      const isD = r.status === "done" || r.status === "resolved" || r.status === "completed";
+      const isDis = r.status === "dismissed" || r.status === "rejected";
+      if (doneFilter === "done") return isD;
+      if (doneFilter === "dismissed") return isDis;
+      return isD || isDis;
+    }
     return true;
   });
-
-  const pendingCount = reports.filter((r) => !r.status || r.status === "pending").length;
-  const validatedCount = reports.filter((r) => r.status === "validated").length;
-  const escalatedCount = reports.filter((r) => r.status === "escalated").length;
 
   return (
     <div className="space-y-8 animate-fade-in font-sans">
@@ -143,7 +160,7 @@ const ValidateReports = () => {
           </span>
           <h1 className="text-3xl font-extrabold text-white">Validate Citizen Reports & Concerns</h1>
           <p className="text-white/80 text-sm max-w-xl">
-            Review incoming water quality reports and new water sources. Validate incoming reports, and forward validated cases directly to CHU (City Health Unit) for field audits.
+            Review incoming water quality complaints and contamination concerns. Validate incoming reports, and forward validated cases directly to CHU (City Health Unit) for field audits. New water source submissions are reviewed in the Water Sources Registry.
           </p>
         </div>
 
@@ -174,16 +191,6 @@ const ValidateReports = () => {
       {/* Filter Tabs */}
       <div className="flex flex-wrap gap-2 items-center">
         <button
-          onClick={() => setStatusFilter("all")}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
-            statusFilter === "all"
-              ? "bg-blue-900 text-white shadow-sm"
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          }`}
-        >
-          All Submissions ({reports.length})
-        </button>
-        <button
           onClick={() => setStatusFilter("pending")}
           className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
             statusFilter === "pending"
@@ -191,9 +198,12 @@ const ValidateReports = () => {
               : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
           }`}
         >
-          <span>1. Pending Review</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[10px]">{pendingCount}</span>
+          <span>Pending Review</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+            statusFilter === "pending" ? "bg-amber-800/40 text-white" : "bg-amber-100 text-amber-800"
+          }`}>{pendingCount}</span>
         </button>
+
         <button
           onClick={() => setStatusFilter("validated")}
           className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -202,9 +212,26 @@ const ValidateReports = () => {
               : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
           }`}
         >
-          <span>2. Validated (Ready to Pass)</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px]">{validatedCount}</span>
+          <span>Validated</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+            statusFilter === "validated" ? "bg-emerald-800/40 text-white" : "bg-emerald-100 text-emerald-800"
+          }`}>{validatedCount}</span>
         </button>
+
+        <button
+          onClick={() => setStatusFilter("done")}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === "done"
+              ? "bg-blue-600 text-white shadow-sm"
+              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+          }`}
+        >
+          <span>Done History</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+            statusFilter === "done" ? "bg-blue-800/40 text-white" : "bg-blue-100 text-blue-800"
+          }`}>{doneHistoryTotal}</span>
+        </button>
+
         <button
           onClick={() => setStatusFilter("escalated")}
           className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
@@ -213,10 +240,65 @@ const ValidateReports = () => {
               : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
           }`}
         >
-          <span>3. Passed to CHU</span>
-          <span className="px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-800 text-[10px]">{escalatedCount}</span>
+          <span>Passed to CHU</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+            statusFilter === "escalated" ? "bg-purple-900/40 text-white" : "bg-purple-100 text-purple-800"
+          }`}>{escalatedCount}</span>
+        </button>
+
+        <button
+          onClick={() => setStatusFilter("all")}
+          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === "all"
+              ? "bg-slate-800 text-white shadow-sm"
+              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+          }`}
+        >
+          <span>All Submissions</span>
+          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+            statusFilter === "all" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"
+          }`}>{reports.length}</span>
         </button>
       </div>
+
+      {/* Done History Sub-Filter (Visible when on Done History tab) */}
+      {statusFilter === "done" && (
+        <div className="flex flex-wrap items-center gap-2 p-3 bg-white rounded-2xl border border-slate-200 shadow-sm animate-fade-in">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider pl-1 mr-1">
+            Status Filter:
+          </span>
+          <button
+            onClick={() => setDoneFilter("all")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              doneFilter === "all"
+                ? "bg-slate-900 text-white shadow-sm"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+            }`}
+          >
+            <span>All ({doneHistoryTotal})</span>
+          </button>
+          <button
+            onClick={() => setDoneFilter("done")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              doneFilter === "done"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+            }`}
+          >
+            <span>Done ({doneCount})</span>
+          </button>
+          <button
+            onClick={() => setDoneFilter("dismissed")}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              doneFilter === "dismissed"
+                ? "bg-rose-600 text-white shadow-sm"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-600"
+            }`}
+          >
+            <span>Dismissed ({dismissedCount})</span>
+          </button>
+        </div>
+      )}
 
       {/* Main Reports Table */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
@@ -254,8 +336,9 @@ const ValidateReports = () => {
                 filteredReports.map((r) => {
                   const isPending = !r.status || r.status === "pending";
                   const isValidated = r.status === "validated";
-                  const isEscalated = r.status === "escalated";
-                  const isRejected = r.status === "rejected" || r.status === "dismissed";
+                  const isDone = r.status === "done" || r.status === "resolved" || r.status === "completed";
+                  const isDismissed = r.status === "dismissed" || r.status === "rejected";
+                  const isEscalated = r.status === "escalated" || r.status === "passed_to_chu";
                   const displayDesc = cleanDesc(r) || r.description;
                   const isBusy = actionLoading === r.id;
 
@@ -291,11 +374,15 @@ const ValidateReports = () => {
                             ? "bg-amber-100 text-amber-800 border border-amber-200"
                             : isValidated
                             ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                            : isDone
+                            ? "bg-blue-100 text-blue-800 border border-blue-200"
+                            : isDismissed
+                            ? "bg-rose-100 text-rose-800 border border-rose-200"
                             : isEscalated
                             ? "bg-purple-100 text-purple-800 border border-purple-200"
                             : "bg-slate-100 text-slate-700 border border-slate-200"
                         }`}>
-                          {isEscalated ? "Passed to CHU" : isValidated ? "Validated" : r.status || "Pending"}
+                          {isEscalated ? "Passed to CHU" : isValidated ? "Validated" : isDone ? "Done" : isDismissed ? "Dismissed" : "Pending Review"}
                         </span>
                       </td>
 
@@ -325,10 +412,48 @@ const ValidateReports = () => {
           report={detailReport}
           onClose={() => setDetailReport(null)}
           onUpdateStatus={handleUpdateStatus}
-          onOpenRejectModal={(id) => setRejectModal({ open: true, reportId: id, reason: "" })}
+          onOpenRejectModal={(id) => setDismissModal({ open: true, reportId: id, reason: "" })}
           actionLoading={actionLoading}
           isStaff={true}
         />
+      )}
+
+      {/* Dismiss Reason Modal */}
+      {dismissModal.open && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4 animate-fade-in">
+            <h3 className="font-bold text-base text-slate-900">Dismiss Citizen Report</h3>
+            <p className="text-xs text-slate-500">
+              Provide an optional note or reason for dismissing this concern. The report will be moved to Done History with a Dismissed status.
+            </p>
+            <textarea
+              rows={3}
+              value={dismissModal.reason}
+              onChange={(e) => setDismissModal({ ...dismissModal, reason: e.target.value })}
+              placeholder="e.g. Duplicate report, invalid concern, or issue already settled..."
+              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
+            />
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDismissModal({ open: false, reportId: null, reason: "" })}
+                className="w-1/2 py-2.5 rounded-full border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleUpdateStatus(dismissModal.reportId, "dismissed", false, dismissModal.reason);
+                  setDismissModal({ open: false, reportId: null, reason: "" });
+                }}
+                className="w-1/2 py-2.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs shadow-md cursor-pointer"
+              >
+                Confirm Dismissal
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Photo Proof Modal (Quick Viewer) */}
@@ -361,42 +486,6 @@ const ValidateReports = () => {
                 <ExternalLink size={14} />
                 <span>Open Full Resolution</span>
               </a>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Dismiss / Reject Reason Modal */}
-      {rejectModal.open && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4 animate-fade-in">
-            <h3 className="font-bold text-base text-slate-900">Dismiss Citizen Report</h3>
-            <p className="text-xs text-slate-500">Provide an optional reason or note for dismissing this concern.</p>
-            <textarea
-              rows={3}
-              value={rejectModal.reason}
-              onChange={(e) => setRejectModal({ ...rejectModal, reason: e.target.value })}
-              placeholder="e.g. Duplicate report, already inspected yesterday, or issue resolved..."
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-            />
-            <div className="flex gap-3 pt-2">
-              <button
-                type="button"
-                onClick={() => setRejectModal({ open: false, reportId: null, reason: "" })}
-                className="w-1/2 py-2.5 rounded-full border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handleUpdateStatus(rejectModal.reportId, "rejected", false, rejectModal.reason);
-                  setRejectModal({ open: false, reportId: null, reason: "" });
-                }}
-                className="w-1/2 py-2.5 rounded-full bg-red-600 hover:bg-red-700 text-white font-semibold text-xs shadow-md cursor-pointer"
-              >
-                Confirm Dismissal
-              </button>
             </div>
           </div>
         </div>

@@ -330,17 +330,28 @@ const WaterMap = () => {
 
       const isSafe = loc.status?.toLowerCase() === "safe";
       const isWarning = loc.status?.toLowerCase() === "warning";
-      const color = isSafe ? "#10b981" : isWarning ? "#f59e0b" : "#ef4444";
+      const isUnknown = loc.status?.toLowerCase() === "unknown" || loc.status?.toLowerCase() === "pending";
+      const color = isSafe ? "#10b981" : isWarning ? "#f59e0b" : isUnknown ? "#64748b" : "#ef4444";
+      const isSelected = selectedLocation?.id === loc.id;
+
+      const borderStyle = isSelected
+        ? "border: 3px solid #2563eb; box-shadow: 0 4px 10px rgba(0,0,0,0.35); transform: scale(1.15);"
+        : "border: 2.5px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.35);";
+
+      const labelStyle = isSelected
+        ? "border-blue-500 bg-white/95 text-slate-900"
+        : "border-slate-300 bg-white/95 text-slate-900";
 
       const el = document.createElement("div");
-      el.className = "custom-water-marker cursor-pointer group flex flex-col items-center pointer-events-auto";
+      el.className = `custom-water-marker cursor-pointer group flex flex-col items-center pointer-events-auto ${isSelected ? "z-2" : "z-1"}`;
+      el.style.zIndex = isSelected ? "2" : "1";
       el.innerHTML = `
-        <div class="transition-transform duration-200 ease-out group-hover:scale-125 origin-center flex-shrink-0" style="background-color: ${color}; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2.5px solid white; box-shadow: 0 4px 10px rgba(0,0,0,0.35);">
+        <div class="transition-all duration-200 ease-out group-hover:scale-125 origin-center flex-shrink-0" style="background-color: ${color}; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; ${borderStyle}">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"></path>
           </svg>
         </div>
-        <div class="station-zoom-label hidden pointer-events-none mt-1 px-2 py-0.5 rounded-md bg-white/95 text-slate-900 text-[10px] font-bold shadow-md whitespace-nowrap border border-slate-300 text-center max-w-[160px] truncate">
+        <div class="station-zoom-label hidden pointer-events-none mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold shadow-md whitespace-nowrap border text-center max-w-[160px] truncate ${labelStyle}">
           ${loc.name}
         </div>
       `;
@@ -1031,7 +1042,7 @@ const WaterMap = () => {
 
   useEffect(() => {
     renderMarkers();
-  }, [locations, showMarkers, showWaterHeatmap, searchQuery, selectedBarangay]);
+  }, [locations, showMarkers, showWaterHeatmap, searchQuery, selectedBarangay, selectedLocation]);
 
   useEffect(() => {
     if (!map.current) return;
@@ -1642,7 +1653,7 @@ const WaterMap = () => {
 
         {/* Selected Water Location Detail Card */}
         {selectedLocation && (
-          <div className="absolute bottom-4 left-4 right-4 sm:top-6 sm:right-6 sm:bottom-auto sm:left-auto sm:w-80 z-20 bg-white/95 backdrop-blur-2xl rounded-3xl p-5 shadow-2xl border border-slate-100 animate-fade-in">
+          <div className="absolute bottom-4 left-4 right-4 sm:top-6 sm:right-6 sm:bottom-auto sm:left-auto sm:w-80 z-40 bg-white rounded-3xl p-5 shadow-2xl border border-slate-100 animate-fade-in">
             <div className="flex items-start justify-between pb-3 border-b border-slate-100">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Station Overview</span>
@@ -1659,13 +1670,19 @@ const WaterMap = () => {
                 <span className="text-slate-500">Status:</span>
                 <span className="font-bold uppercase text-slate-800">{selectedLocation.status || "Unknown"}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Coliform Count:</span>
-                <span className="font-bold text-slate-800">{selectedLocation.coliform_count ?? 0} MPN</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">E. Coli Count:</span>
-                <span className="font-bold text-slate-800">{selectedLocation.e_coli_count ?? 0} CFU</span>
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-slate-500">E. Coli Presence:</span>
+                {Boolean(selectedLocation.e_coli || (selectedLocation.e_coli_count && Number(selectedLocation.e_coli_count) > 0)) ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-red-100 text-red-800 border border-red-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-red-600 animate-pulse" />
+                    <span>Present</span>
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                    <span>Not Present</span>
+                  </span>
+                )}
               </div>
               {selectedLocation.sample_date && (
                 <div className="flex justify-between pt-1 border-t border-slate-100">

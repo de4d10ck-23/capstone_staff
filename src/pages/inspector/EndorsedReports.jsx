@@ -52,7 +52,10 @@ const cleanDesc = (item) => {
   if (!item) return "";
   if (item.clean_description) return item.clean_description;
   if (item.description) {
-    return item.description.replace(/\[(?:Attached )?Photo Proof:\s*https?:\/\/[^\s\]]+\]/gi, "").trim();
+    return item.description
+      .replace(/\[(?:Attached )?Photo Proof:\s*https?:\/\/[^\s\]]+\]/gi, "")
+      .replace(/\[Inspected Source:[^\]]+\]\s*/gi, "")
+      .trim();
   }
   return "";
 };
@@ -365,11 +368,11 @@ const EndorsedReports = () => {
         latitude: parseFloat(registerForm.latitude),
         longitude: parseFloat(registerForm.longitude),
         status: registerForm.status || "safe",
-        e_coli_count: parseInt(registerForm.e_coli_count) || 0,
-        coliform_count: parseInt(registerForm.coliform_count) || 0,
-        e_coli: (parseInt(registerForm.e_coli_count) || 0) > 0,
-        coliform_bacteria: (parseInt(registerForm.coliform_count) || 0) > 0,
-        bacteriological_exam: registerForm.bacteriological_exam || (registerForm.status === "safe" ? "passed" : "failed"),
+        e_coli: Boolean(registerForm.e_coli),
+        coliform_bacteria: Boolean(registerForm.e_coli),
+        e_coli_count: registerForm.e_coli ? 1 : 0,
+        coliform_count: registerForm.e_coli ? 1 : 0,
+        bacteriological_exam: registerForm.e_coli || registerForm.status !== "safe" ? "failed" : "passed",
         description: (registerForm.description || "Registered from verified citizen report.").trim(),
         notes: (registerForm.description || "Registered from verified citizen report.").trim(),
         sample_date: new Date().toISOString().split("T")[0]
@@ -424,6 +427,7 @@ const EndorsedReports = () => {
       latitude: item.latitude || 10.1330,
       longitude: item.longitude || 124.8700,
       status: "safe",
+      e_coli: false,
       e_coli_count: 0,
       coliform_count: 0,
       bacteriological_exam: "passed",
@@ -1370,44 +1374,51 @@ const EndorsedReports = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                     Safety Status
                   </label>
                   <select
                     value={registerForm.status}
-                    onChange={(e) => setRegisterForm({ ...registerForm, status: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
+                    onChange={(e) => {
+                      const newStatus = e.target.value;
+                      setRegisterForm((prev) => ({
+                        ...prev,
+                        status: newStatus,
+                        e_coli: (newStatus === "contaminated" || newStatus === "undrinkable") ? true : (newStatus === "safe" ? false : prev.e_coli)
+                      }));
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
                   >
                     <option value="safe">Safe</option>
                     <option value="warning">Warning Level</option>
-                    <option value="undrinkable">Contaminated</option>
+                    <option value="contaminated">Contaminated</option>
+                    <option value="unknown">Unknown</option>
                   </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                    E. Coli (CFU/100ml)
+                    E. Coli Presence
                   </label>
-                  <input
-                    type="number"
-                    value={registerForm.e_coli_count}
-                    onChange={(e) => setRegisterForm({ ...registerForm, e_coli_count: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                    Coliform (MPN/100ml)
-                  </label>
-                  <input
-                    type="number"
-                    value={registerForm.coliform_count}
-                    onChange={(e) => setRegisterForm({ ...registerForm, coliform_count: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                  />
+                  <select
+                    value={registerForm.e_coli ? "present" : "not_present"}
+                    onChange={(e) => {
+                      const isPresent = e.target.value === "present";
+                      setRegisterForm((prev) => ({
+                        ...prev,
+                        e_coli: isPresent,
+                        e_coli_count: isPresent ? 1 : 0,
+                        coliform_count: isPresent ? 1 : 0,
+                        status: isPresent && prev.status === "safe" ? "contaminated" : prev.status
+                      }));
+                    }}
+                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
+                  >
+                    <option value="not_present">Not Present</option>
+                    <option value="present">Present</option>
+                  </select>
                 </div>
               </div>
 
