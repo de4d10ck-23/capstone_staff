@@ -114,19 +114,11 @@ const EndorsedReports = () => {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [repRes, inspRes] = await Promise.all([
-        fetch(`${API_URL}/resident-reports`, { headers: { Authorization: `Bearer ${token}` } }),
-        fetch(`${API_URL}/inspections`, { headers: { Authorization: `Bearer ${token}` } })
-      ]);
-
+      const repRes = await fetch(`${API_URL}/resident-reports`, { headers: { Authorization: `Bearer ${token}` } });
       const repData = await repRes.json();
-      const inspData = await inspRes.json();
 
       if (repData.success && Array.isArray(repData.data)) {
         setResidentReports(repData.data);
-      }
-      if (inspData.success && Array.isArray(inspData.data)) {
-        setInspectionRequests(inspData.data);
       }
     } catch (err) {
       console.error("Error loading inspector data:", err);
@@ -139,17 +131,20 @@ const EndorsedReports = () => {
     fetchData();
   }, [API_URL, token]);
 
-  // Combined Unified Items List
+  // Combined Unified Items List (Water inspection requests passed by Brgy to CHU are on Inspection Requests page)
   const combinedItems = useMemo(() => {
     const list = [];
 
-    // 1. Resident Reports (Only Endorsed / Passed to CHU by Barangay Officials)
+    // Resident Reports (Validated and Endorsed - excludes passed to CHU inspections which are handled in Inspection Requests)
     residentReports.forEach((r) => {
-      const isEndorsed = r.status === "escalated" || r.status === "passed_to_chu" || r.status === "in_progress" || r.status === "completed" || r.status === "validated";
+      // Exclude escalated / passed to CHU because they are managed on Inspection Requests page
+      if (r.status === "escalated" || r.status === "passed_to_chu") return;
+
+      const isEndorsed = r.status === "in_progress" || r.status === "completed" || r.status === "validated";
       if (!isEndorsed) return;
 
-      const isEscalated = r.status === "escalated" || r.status === "passed_to_chu";
       const isNewSource = r.type === "unregistered_source" || r.type === "new_source" || r.category === "new_source" || (r.title && r.title.toLowerCase().includes("water source"));
+      if (isNewSource) return;
       
       list.push({
         id: r.id,
@@ -161,9 +156,9 @@ const EndorsedReports = () => {
         barangay: r.barangay,
         latitude: r.latitude,
         longitude: r.longitude,
-        status: r.status || "escalated",
-        isEscalated,
-        isNewSource,
+        status: r.status || "validated",
+        isEscalated: false,
+        isNewSource: false,
         category: r.type || r.category || "Concern",
         photoUrl: extractPhoto(r),
         reason: r.reason,
@@ -172,36 +167,8 @@ const EndorsedReports = () => {
       });
     });
 
-    // 2. Direct Inspection Requests
-    inspectionRequests.forEach((insp) => {
-      const isFromEscalation = insp.description && insp.description.includes("[Concern passed to CHU");
-
-      // Avoid exact duplicate if resident report generated this inspection request
-      list.push({
-        id: `insp_${insp.id}`,
-        rawId: insp.id,
-        kind: "inspection_request",
-        title: isFromEscalation ? "Barangay Endorsed Field Inspection" : "Citizen Water Inspection Request",
-        description: insp.description,
-        cleanDesc: insp.description,
-        barangay: insp.barangay,
-        latitude: insp.latitude,
-        longitude: insp.longitude,
-        status: insp.status || "pending",
-        priority: insp.priority || "normal",
-        isEscalated: isFromEscalation,
-        isNewSource: false,
-        category: "Inspection Request",
-        photoUrl: null,
-        notes: insp.notes,
-        assigned_to: insp.assigned_to,
-        created_at: insp.created_at,
-        original: insp,
-      });
-    });
-
     return list.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-  }, [residentReports, inspectionRequests]);
+  }, [residentReports]);
 
   // Filtered List
   const filteredItems = useMemo(() => {
@@ -636,7 +603,7 @@ const EndorsedReports = () => {
             Barangay Endorsements & Inspection Requests
           </h1>
           <p className="text-sm text-slate-500 max-w-2xl">
-            Review water concerns escalated by Barangay Officials, process resident water source submissions, dispatch field testing, and certify clean water points.
+            Review water concerns escalated by Barangay Officials, dispatch field testing, and certify clean water points.
           </p>
         </div>
 
@@ -672,7 +639,7 @@ const EndorsedReports = () => {
       )}
 
       {/* Key Metric Counters */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
         <div 
           onClick={() => {
             setActiveTab("escalated");
@@ -690,25 +657,6 @@ const EndorsedReports = () => {
           </div>
           <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{metrics.escalated}</div>
           <p className="text-[11px] text-purple-700 font-medium mt-1">Endorsed by Brgy Officials</p>
-        </div>
-
-        <div 
-          onClick={() => {
-            setActiveTab("new_sources");
-            setStatusFilter("all");
-          }}
-          className={`p-5 rounded-3xl border shadow-sm cursor-pointer hover:shadow-md transition-all group ${
-            activeTab === "new_sources" && statusFilter === "all"
-              ? "bg-blue-50 border-blue-400 ring-2 ring-blue-400/30"
-              : "bg-gradient-to-br from-blue-500/10 to-cyan-500/5 border-blue-200/80"
-          }`}
-        >
-          <div className="flex justify-between items-center text-blue-700 mb-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-500 group-hover:text-blue-700">New Water Sources</span>
-            <Droplets size={18} />
-          </div>
-          <div className="text-2xl sm:text-3xl font-extrabold text-slate-900">{metrics.newSources}</div>
-          <p className="text-[11px] text-blue-700 font-medium mt-1">Submitted for verification</p>
         </div>
 
         <div 
@@ -765,52 +713,7 @@ const EndorsedReports = () => {
                 : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
             }`}
           >
-            All Submissions ({combinedItems.length})
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab("escalated");
-              setStatusFilter("all");
-            }}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "escalated"
-                ? "bg-purple-600 text-white shadow-md shadow-purple-500/20"
-                : "bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200/60"
-            }`}
-          >
-            <ShieldAlert size={14} />
-            <span>Passed to CHU ({metrics.escalated})</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab("new_sources");
-              setStatusFilter("all");
-            }}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "new_sources"
-                ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
-                : "bg-blue-50 text-blue-800 hover:bg-blue-100 border border-blue-200/60"
-            }`}
-          >
-            <Droplets size={14} />
-            <span>New Water Sources ({metrics.newSources})</span>
-          </button>
-
-          <button
-            onClick={() => {
-              setActiveTab("inspections");
-              setStatusFilter("all");
-            }}
-            className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              activeTab === "inspections"
-                ? "bg-indigo-600 text-white shadow-md"
-                : "bg-slate-50 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            }`}
-          >
-            <FileText size={14} />
-            <span>Inspection Requests</span>
+            All Validated Reports ({combinedItems.length})
           </button>
         </div>
 
@@ -1424,7 +1327,7 @@ const EndorsedReports = () => {
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Inspection Notes / Details
+                  Notes / Details
                 </label>
                 <textarea
                   rows={3}

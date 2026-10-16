@@ -97,8 +97,50 @@ const getSubmissionStatus = (r) => {
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_KEY || "pk.eyJ1Ijoiamx0dCIsImEiOiJjbW9pNHBpZTgwMHB3MnFxMHNxcnY0MXBiIn0.__mzgeQcXuEDVkV6q8QNfQ";
 
+// Helper to extract clean YYYY-MM-DD from log without UTC conversion shifts
+const extractLogDateStr = (log) => {
+  if (!log) return "";
+  if (log.sample_date) return log.sample_date;
+  if (typeof log.recorded_at === "string") {
+    if (log.recorded_at.includes("T")) {
+      return log.recorded_at.split("T")[0];
+    }
+    const match = log.recorded_at.match(/^\d{4}-\d{2}-\d{2}/);
+    if (match) return match[0];
+  }
+  const d = new Date(log.recorded_at);
+  if (!isNaN(d.getTime())) {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }
+  return "";
+};
+
+const formatDisplayDate = (dateStr) => {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-");
+  if (parts.length === 3) {
+    const d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]));
+    return d.toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  }
+  return dateStr;
+};
+
 // GitHub-Style Activity Calendar Heatmap for Water Source Status Changes (Light Theme with Year Selector)
-const WaterStatusHeatmap = ({ history = [], loading = false, currentStatus = null }) => {
+const WaterStatusHeatmap = ({ 
+  history = [], 
+  loading = false, 
+  currentStatus = null,
+  selectedDate = null,
+  onSelectLog = null,
+}) => {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [hoveredDay, setHoveredDay] = useState(null);
@@ -108,48 +150,29 @@ const WaterStatusHeatmap = ({ history = [], loading = false, currentStatus = nul
     const map = {};
     if (Array.isArray(history)) {
       history.forEach((log) => {
-        if (!log.recorded_at) return;
-        const d = new Date(log.recorded_at);
-        if (isNaN(d.getTime())) return;
-        const yyyy = d.getFullYear();
-        const mm = String(d.getMonth() + 1).padStart(2, "0");
-        const dd = String(d.getDate()).padStart(2, "0");
-        const dateStr = `${yyyy}-${mm}-${dd}`;
+        const dateStr = extractLogDateStr(log);
+        if (!dateStr) return;
 
         const existing = map[dateStr];
         if (!existing) {
           map[dateStr] = log;
         } else {
-          const exSt = (existing.status || "").toLowerCase();
-          const newSt = (log.status || "").toLowerCase();
-
-          const isExEvaluated = exSt === "contaminated" || exSt === "undrinkable" || exSt === "warning" || exSt === "safe";
-          const isNewEvaluated = newSt === "contaminated" || newSt === "undrinkable" || newSt === "warning" || newSt === "safe";
-
-          const activeTarget = (currentStatus || "").toLowerCase();
-
-          if (!isExEvaluated && isNewEvaluated) {
-            map[dateStr] = log;
-          } else if (isExEvaluated && isNewEvaluated) {
-            if (activeTarget && (newSt === activeTarget || (activeTarget === "contaminated" && (newSt === "contaminated" || newSt === "undrinkable")))) {
-              map[dateStr] = log;
-            } else {
-              map[dateStr] = log;
-            }
-          }
+          // If multiple logs on the same date, take the latest log
+          map[dateStr] = log;
         }
       });
     }
     return map;
-  }, [history, currentStatus]);
+  }, [history]);
 
   // Collect available years from history + default range
   const availableYears = useMemo(() => {
     const set = new Set([currentYear, currentYear - 1, currentYear - 2, currentYear - 3]);
     if (Array.isArray(history)) {
       history.forEach((log) => {
-        if (log.recorded_at) {
-          const yr = new Date(log.recorded_at).getFullYear();
+        const dStr = extractLogDateStr(log);
+        if (dStr) {
+          const yr = parseInt(dStr.split("-")[0], 10);
           if (!isNaN(yr)) set.add(yr);
         }
       });
@@ -161,8 +184,9 @@ const WaterStatusHeatmap = ({ history = [], loading = false, currentStatus = nul
   const yearAuditsCount = useMemo(() => {
     if (!Array.isArray(history)) return 0;
     return history.filter((log) => {
-      if (!log.recorded_at) return false;
-      const yr = new Date(log.recorded_at).getFullYear();
+      const dStr = extractLogDateStr(log);
+      if (!dStr) return false;
+      const yr = parseInt(dStr.split("-")[0], 10);
       const st = (log.status || "").toLowerCase();
       return yr === selectedYear && st !== "unknown" && st !== "pending" && st !== "";
     }).length;
@@ -231,6 +255,11 @@ const WaterStatusHeatmap = ({ history = [], loading = false, currentStatus = nul
     const status = (day.log.status || "").toLowerCase();
     const exam = (day.log.bacteriological_exam || "").toLowerCase();
 
+    // If status is unknown, pending, or untested: don't put a color in the boxes (uncolored/grey)
+    if (status === "unknown" || status === "pending" || (!status && (exam === "unknown" || exam === "untested")) || (status === "unknown" && exam === "passed")) {
+      return "bg-slate-200/90 hover:border-slate-400 border border-slate-300/80 cursor-pointer";
+    }
+
     // Contaminated / failed check is red
     if (status === "contaminated" || status === "undrinkable" || exam === "failed") {
       return "bg-red-500 hover:bg-red-600 border border-red-600 shadow-xs shadow-red-500/20 cursor-pointer";
@@ -239,13 +268,9 @@ const WaterStatusHeatmap = ({ history = [], loading = false, currentStatus = nul
     if (status === "warning") {
       return "bg-amber-400 hover:bg-amber-500 border border-amber-500 shadow-xs shadow-amber-500/20 cursor-pointer";
     }
-    // Safe level is emerald
-    if (status === "safe" || exam === "passed") {
+    // Safe level is emerald (only when evaluated as safe)
+    if (status === "safe" || (exam === "passed" && status !== "unknown")) {
       return "bg-emerald-500 hover:bg-emerald-600 border border-emerald-600 shadow-xs shadow-emerald-500/20 cursor-pointer";
-    }
-    // If status is unknown, pending, or untested: don't put a color in the boxes
-    if (status === "unknown" || status === "pending" || (!status && (exam === "unknown" || exam === "untested"))) {
-      return "bg-slate-200/90 hover:border-slate-400 border border-slate-300/80 cursor-pointer";
     }
 
     return "bg-slate-200/90 hover:border-slate-400 border border-slate-300/80 cursor-pointer";
@@ -331,10 +356,13 @@ const WaterStatusHeatmap = ({ history = [], loading = false, currentStatus = nul
                   {week.map((day, dIdx) => (
                     <div
                       key={dIdx}
+                      onClick={() => day.log && onSelectLog && onSelectLog(day.log, day.dateStr)}
                       onMouseEnter={() => setHoveredDay(day)}
                       onMouseLeave={() => setHoveredDay(null)}
-                      className={`w-[11px] h-[11px] rounded-[2px] transition-transform ${getCellColor(day)}`}
-                      title={`${day.dateStr}${day.log ? `: ${day.log.status}` : ": No changes"}`}
+                      className={`w-[11px] h-[11px] rounded-[2px] transition-all ${getCellColor(day)} ${
+                        selectedDate === day.dateStr ? "ring-2 ring-blue-600 scale-125 z-10" : ""
+                      }`}
+                      title={`${day.dateStr}${day.log ? `: ${day.log.status}` : ": No changes"}${day.log ? " (Click to load this audit)" : ""}`}
                     />
                   ))}
                 </div>
@@ -360,12 +388,7 @@ const WaterStatusHeatmap = ({ history = [], loading = false, currentStatus = nul
               }`}
             />
             <span className="font-bold text-slate-900">
-              {hoveredDay.date.toLocaleDateString("en-US", {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
-                year: "numeric",
-              })}
+              {formatDisplayDate(hoveredDay.dateStr)}
             </span>
             <span
               className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
@@ -438,6 +461,7 @@ const WaterStatusHeatmap = ({ history = [], loading = false, currentStatus = nul
 const WaterSources = () => {
   const { token, API_URL, user } = useAuth();
   const isBrgyOfficial = user?.role === "barangay_official";
+  const isInspector = user?.role === "sanitization_inspector";
   const userBarangay = user?.barangay || "Combado";
 
   const [sources, setSources] = useState([]);
@@ -507,6 +531,24 @@ const WaterSources = () => {
     } finally {
       setHistoryLoading(false);
     }
+  };
+
+  const handleSelectHistoryLog = (log, dateStr) => {
+    if (!log) return;
+    const rawStatus = (log.status || "safe").toLowerCase();
+    const normalizedStatus = rawStatus === "undrinkable" ? "contaminated" : rawStatus;
+    const eColiPresent = Boolean(log.e_coli || (log.e_coli_count && Number(log.e_coli_count) > 0));
+    setFormData((prev) => ({
+      ...prev,
+      status: normalizedStatus,
+      e_coli_present: eColiPresent,
+      e_coli_count: log.e_coli_count || (eColiPresent ? 1 : 0),
+      coliform_count: log.coliform_count || 0,
+      bacteriological_exam: log.bacteriological_exam || (normalizedStatus === "safe" ? "passed" : "failed"),
+      sample_date: log.sample_date || dateStr,
+      sample_time: log.sample_time || "12:00:00",
+      description: log.notes || prev.description,
+    }));
   };
 
   const fetchSources = async () => {
@@ -1082,31 +1124,33 @@ const WaterSources = () => {
               : "Manage tested water stations, wells, taps, and laboratory metrics"}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            onClick={() => setIsSubmissionsModalOpen(true)}
-            className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 px-4 py-2.5 rounded-full text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer relative"
-          >
-            <Inbox size={16} className="text-blue-600" />
-            <span>Resident Submissions</span>
-            {pendingSubmissionsCount > 0 ? (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white animate-pulse">
-                {pendingSubmissionsCount}
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
-                0
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => handleOpenModal()}
-            className="inline-flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-md hover:shadow-lg transition-all cursor-pointer"
-          >
-            <Plus size={16} />
-            <span>Register New Station</span>
-          </button>
-        </div>
+        {!isInspector && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              onClick={() => setIsSubmissionsModalOpen(true)}
+              className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 px-4 py-2.5 rounded-full text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer relative"
+            >
+              <Inbox size={16} className="text-blue-600" />
+              <span>Resident Submissions</span>
+              {pendingSubmissionsCount > 0 ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-600 text-white animate-pulse">
+                  {pendingSubmissionsCount}
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200">
+                  0
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() => handleOpenModal()}
+              className="inline-flex items-center gap-2 bg-blue-900 hover:bg-blue-800 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-md hover:shadow-lg transition-all cursor-pointer"
+            >
+              <Plus size={16} />
+              <span>Register New Station</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {successMsg && (
@@ -1284,13 +1328,15 @@ const WaterSources = () => {
                           >
                             <Edit2 size={14} />
                           </button>
-                          <button
-                            onClick={() => handleDelete(s.id)}
-                            className="p-1.5 rounded-lg border border-red-100 text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                            title="Delete Station"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          {!isInspector && (
+                            <button
+                              onClick={() => handleDelete(s.id)}
+                              className="p-1.5 rounded-lg border border-red-100 text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              title="Delete Station"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -1492,7 +1538,9 @@ const WaterSources = () => {
                   <WaterStatusHeatmap 
                     history={statusHistory} 
                     loading={historyLoading} 
-                    currentStatus={formData.status === "undrinkable" ? "contaminated" : formData.status} 
+                    currentStatus={formData.status === "undrinkable" ? "contaminated" : formData.status}
+                    selectedDate={formData.sample_date}
+                    onSelectLog={handleSelectHistoryLog}
                   />
                 </div>
               )}
@@ -1566,7 +1614,7 @@ const WaterSources = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Inspection Notes / Details</label>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Notes / Details</label>
                 <textarea
                   rows={3}
                   value={formData.description}
