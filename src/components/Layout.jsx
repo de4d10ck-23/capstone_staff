@@ -93,11 +93,11 @@ const Layout = () => {
       <div className="p-5 border-b border-slate-100 flex items-center justify-between">
         <div className="flex items-center space-x-3">
           <img
-            src="/images/logo/cropped_circle_image.png"
+            src="/images/logo/waterwatch-icon-192.png"
             alt="WaterWatch Logo"
-            className="w-10 h-10 rounded-full border-2 border-blue-200 object-cover"
+            className="w-10 h-10 rounded-full border border-blue-200 object-cover shadow-xs"
             onError={(e) => {
-              e.target.style.display = 'none';
+              e.target.src = '/images/logo/waterwatch-logo.svg';
             }}
           />
           <div>
