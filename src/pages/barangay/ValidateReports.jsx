@@ -9,7 +9,8 @@ import {
   Send, 
   MapPin, 
   ExternalLink, 
-  Eye
+  Eye,
+  History
 } from "lucide-react";
 import ReportDetailModal from "../../components/ReportDetailModal";
 
@@ -189,83 +190,87 @@ const ValidateReports = () => {
       )}
 
       {/* Filter Tabs */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <button
-          onClick={() => setStatusFilter("pending")}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-            statusFilter === "pending"
-              ? "bg-amber-600 text-white shadow-sm"
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          }`}
-        >
-          <span>Pending Review</span>
-          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-            statusFilter === "pending" ? "bg-amber-800/40 text-white" : "bg-amber-100 text-amber-800"
-          }`}>{pendingCount}</span>
-        </button>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <button
+            onClick={() => setStatusFilter("pending")}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              statusFilter === "pending"
+                ? "bg-amber-600 text-white shadow-sm"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            <span>Pending Review</span>
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              statusFilter === "pending" ? "bg-amber-800/40 text-white" : "bg-amber-100 text-amber-800"
+            }`}>{pendingCount}</span>
+          </button>
 
-        <button
-          onClick={() => setStatusFilter("validated")}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-            statusFilter === "validated"
-              ? "bg-emerald-600 text-white shadow-sm"
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          }`}
-        >
-          <span>Validated</span>
-          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-            statusFilter === "validated" ? "bg-emerald-800/40 text-white" : "bg-emerald-100 text-emerald-800"
-          }`}>{validatedCount}</span>
-        </button>
+          <button
+            onClick={() => setStatusFilter("validated")}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              statusFilter === "validated"
+                ? "bg-emerald-600 text-white shadow-sm"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            <span>Validated</span>
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              statusFilter === "validated" ? "bg-emerald-800/40 text-white" : "bg-emerald-100 text-emerald-800"
+            }`}>{validatedCount}</span>
+          </button>
 
+          <button
+            onClick={() => setStatusFilter("escalated")}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              statusFilter === "escalated"
+                ? "bg-purple-700 text-white shadow-sm"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            <span>Passed to CHU</span>
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              statusFilter === "escalated" ? "bg-purple-900/40 text-white" : "bg-purple-100 text-purple-800"
+            }`}>{escalatedCount}</span>
+          </button>
+
+          <button
+            onClick={() => setStatusFilter("all")}
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+              statusFilter === "all"
+                ? "bg-slate-800 text-white shadow-sm"
+                : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            <span>All Submissions</span>
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+              statusFilter === "all" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"
+            }`}>{reports.length}</span>
+          </button>
+        </div>
+
+        {/* History Tab - Right Side Corner */}
         <button
           onClick={() => setStatusFilter("done")}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ml-auto sm:ml-0 ${
             statusFilter === "done"
               ? "bg-blue-600 text-white shadow-sm"
               : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
           }`}
         >
-          <span>Done History</span>
+          <History size={14} className={statusFilter === "done" ? "text-white" : "text-slate-400"} />
+          <span>History</span>
           <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
             statusFilter === "done" ? "bg-blue-800/40 text-white" : "bg-blue-100 text-blue-800"
           }`}>{doneHistoryTotal}</span>
         </button>
-
-        <button
-          onClick={() => setStatusFilter("escalated")}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-            statusFilter === "escalated"
-              ? "bg-purple-700 text-white shadow-sm"
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          }`}
-        >
-          <span>Passed to CHU</span>
-          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-            statusFilter === "escalated" ? "bg-purple-900/40 text-white" : "bg-purple-100 text-purple-800"
-          }`}>{escalatedCount}</span>
-        </button>
-
-        <button
-          onClick={() => setStatusFilter("all")}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
-            statusFilter === "all"
-              ? "bg-slate-800 text-white shadow-sm"
-              : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
-          }`}
-        >
-          <span>All Submissions</span>
-          <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
-            statusFilter === "all" ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"
-          }`}>{reports.length}</span>
-        </button>
       </div>
 
-      {/* Done History Sub-Filter (Visible when on Done History tab) */}
+      {/* History Sub-Filter (Visible when on History tab) */}
       {statusFilter === "done" && (
         <div className="flex flex-wrap items-center gap-2 p-3 bg-white rounded-2xl border border-slate-200 shadow-sm animate-fade-in">
           <span className="text-xs font-bold text-slate-500 uppercase tracking-wider pl-1 mr-1">
-            Status Filter:
+            History Filter:
           </span>
           <button
             onClick={() => setDoneFilter("all")}

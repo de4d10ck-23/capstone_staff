@@ -327,6 +327,12 @@ const EndorsedReports = () => {
     setErrorMsg("");
 
     try {
+      const isPresent = registerForm.e_coli === "present" || registerForm.e_coli === true;
+      const isEColiUnknown = registerForm.e_coli === "unknown" || registerForm.e_coli === null;
+      const isContaminated = registerForm.status === "contaminated" || registerForm.status === "undrinkable";
+      const isSafe = registerForm.status === "safe";
+      const isUnknown = registerForm.status === "unknown" || isEColiUnknown;
+
       const payload = {
         name: (registerForm.name || "Water Station").trim(),
         full_name: (registerForm.name || "Water Station").trim(),
@@ -334,12 +340,12 @@ const EndorsedReports = () => {
         barangay: registerForm.barangay || "Combado",
         latitude: parseFloat(registerForm.latitude),
         longitude: parseFloat(registerForm.longitude),
-        status: registerForm.status || "safe",
-        e_coli: Boolean(registerForm.e_coli),
-        coliform_bacteria: Boolean(registerForm.e_coli),
-        e_coli_count: registerForm.e_coli ? 1 : 0,
-        coliform_count: registerForm.e_coli ? 1 : 0,
-        bacteriological_exam: registerForm.e_coli || registerForm.status !== "safe" ? "failed" : "passed",
+        status: isContaminated ? "contaminated" : (isUnknown ? "unknown" : (isSafe ? "safe" : "warning")),
+        e_coli: (isUnknown || isEColiUnknown) ? null : isPresent,
+        coliform_bacteria: (isUnknown || isEColiUnknown) ? null : isPresent,
+        e_coli_count: (isUnknown || isEColiUnknown) ? 0 : (isPresent ? 1 : 0),
+        coliform_count: (isUnknown || isEColiUnknown) ? 0 : (isPresent ? 1 : 0),
+        bacteriological_exam: (isUnknown || isEColiUnknown) ? "untested" : (isPresent || isContaminated ? "failed" : "passed"),
         description: (registerForm.description || "Registered from verified citizen report.").trim(),
         notes: (registerForm.description || "Registered from verified citizen report.").trim(),
         sample_date: new Date().toISOString().split("T")[0]
@@ -1289,7 +1295,13 @@ const EndorsedReports = () => {
                       setRegisterForm((prev) => ({
                         ...prev,
                         status: newStatus,
-                        e_coli: (newStatus === "contaminated" || newStatus === "undrinkable") ? true : (newStatus === "safe" ? false : prev.e_coli)
+                        e_coli: (newStatus === "contaminated" || newStatus === "undrinkable")
+                          ? "present"
+                          : newStatus === "safe"
+                          ? "not_present"
+                          : newStatus === "unknown"
+                          ? "unknown"
+                          : prev.e_coli
                       }));
                     }}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
@@ -1306,21 +1318,30 @@ const EndorsedReports = () => {
                     E. Coli Presence
                   </label>
                   <select
-                    value={registerForm.e_coli ? "present" : "not_present"}
+                    value={
+                      registerForm.status === "unknown" || registerForm.e_coli === "unknown" || registerForm.e_coli === null
+                        ? "unknown"
+                        : (registerForm.e_coli === "present" || registerForm.e_coli === true ? "present" : "not_present")
+                    }
                     onChange={(e) => {
-                      const isPresent = e.target.value === "present";
+                      const val = e.target.value;
                       setRegisterForm((prev) => ({
                         ...prev,
-                        e_coli: isPresent,
-                        e_coli_count: isPresent ? 1 : 0,
-                        coliform_count: isPresent ? 1 : 0,
-                        status: isPresent && prev.status === "safe" ? "contaminated" : prev.status
+                        e_coli: val,
+                        e_coli_count: val === "present" ? 1 : 0,
+                        coliform_count: val === "present" ? 1 : 0,
+                        status: val === "present" && (prev.status === "safe" || prev.status === "unknown")
+                          ? "contaminated"
+                          : val === "unknown"
+                          ? "unknown"
+                          : prev.status
                       }));
                     }}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
                   >
                     <option value="not_present">Not Present</option>
                     <option value="present">Present</option>
+                    <option value="unknown">Unknown</option>
                   </select>
                 </div>
               </div>

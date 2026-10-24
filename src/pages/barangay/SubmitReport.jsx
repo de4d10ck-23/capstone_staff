@@ -1,5 +1,6 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
+import LocationPickerMap from "../../components/LocationPickerMap";
 import { 
   Send, 
   AlertOctagon, 
@@ -7,7 +8,6 @@ import {
   AlertCircle, 
   FileText, 
   ShieldAlert, 
-  ClipboardCheck, 
   Users, 
   MapPin, 
   Info 
@@ -21,29 +21,73 @@ const SubmitReport = () => {
 
   const [formData, setFormData] = useState({
     title: "",
-    severity: "normal", // "normal", "high", "critical"
-    location: "",
-    households: "",
+    severity: "normal", // auto-set by mode: "normal" (endorsement) / "critical" (escalation)
     primaryConcern: "water_quality",
-    narrative: "",
-    requestedActions: ["water_testing"]
+    otherConcern: "",
+    narrative: ""
   });
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const toggleAction = (actionKey) => {
-    setFormData((prev) => {
-      const exists = prev.requestedActions.includes(actionKey);
-      return {
-        ...prev,
-        requestedActions: exists
-          ? prev.requestedActions.filter((a) => a !== actionKey)
-          : [...prev.requestedActions, actionKey]
-      };
+  // Pinned water source location: { latitude, longitude, locationId, locationName }
+  const [pinnedLocation, setPinnedLocation] = useState({
+    latitude: 10.133,
+    longitude: 124.87,
+    locationId: null,
+    locationName: "Water Station",
+  });
+  const [waterSources, setWaterSources] = useState([]);
+
+  useEffect(() => {
+    if (!token) return;
+    const brgy = (user?.barangay || "").trim().toLowerCase();
+    fetch(`${API_URL}/water-locations`, { headers: { Authorization: `Bearer ${token}` } })
+      .then((r) => r.json())
+      .then((d) => {
+        const list = Array.isArray(d?.data) ? d.data : [];
+        // Only water sources within the official's barangay
+        const scoped = brgy
+          ? list.filter((s) => (s.barangay || "").trim().toLowerCase() === brgy)
+          : list;
+        scoped.sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+        setWaterSources(scoped);
+      })
+      .catch(() => setWaterSources([]));
+  }, [API_URL, token, user?.barangay]);
+
+  const handlePinChange = (loc) => {
+    setPinnedLocation(loc);
+  };
+
+  // Dropdown -> map pin
+  const handleSourceSelect = (value) => {
+    if (value === "__custom__") {
+      // Keep current pin (if any) but unlink from registered source
+      setPinnedLocation((prev) => (prev ? { ...prev, locationId: null, locationName: null } : null));
+      return;
+    }
+    const src = waterSources.find((s) => String(s.id) === value);
+    if (!src) {
+      setPinnedLocation(null);
+      return;
+    }
+    const lat = parseFloat(src.latitude);
+    const lng = parseFloat(src.longitude);
+    setPinnedLocation({
+      latitude: isNaN(lat) ? 10.133 : Number(lat.toFixed(6)),
+      longitude: isNaN(lng) ? 124.87 : Number(lng.toFixed(6)),
+      locationId: src.id,
+      locationName: src.name || "Water Source",
     });
   };
+
+  const selectedSourceValue = pinnedLocation
+    ? pinnedLocation.locationId
+      ? String(pinnedLocation.locationId)
+      : "__custom__"
+    : "";
 
   const handleModeChange = (mode) => {
     setSubmissionMode(mode);
@@ -52,7 +96,7 @@ const SubmitReport = () => {
     if (mode === "escalation") {
       setFormData((prev) => ({
         ...prev,
-        severity: prev.severity === "normal" ? "critical" : prev.severity,
+        severity: "critical",
         primaryConcern: prev.primaryConcern === "water_quality" ? "diarrhea_outbreak" : prev.primaryConcern
       }));
     } else {
@@ -67,24 +111,45 @@ const SubmitReport = () => {
     e.preventDefault();
     setSuccessMsg("");
     setErrorMsg("");
+
+    if (!pinnedLocation) {
+      setErrorMsg("Please pin the water source location on the map before submitting.");
+      return;
+    }
+
     setIsSubmitting(true);
 
-    const isUrgent = submissionMode === "escalation" || formData.severity === "critical" || formData.severity === "high";
+    const isUrgent = submissionMode === "escalation";
     const brgyName = user?.barangay || "Jurisdiction";
+    const { latitude, longitude, locationId, locationName } = pinnedLocation;
+
+    const CONCERN_LABELS = {
+      water_quality: "Water Quality & Safety Assessment",
+      diarrhea_outbreak: "Waterborne Illness Symptoms (Diarrhea, Vomiting, Stomach Cramps)",
+      turbidity_odor: "Turbidity / Discoloration / Foul Chemical Odor",
+      station_damage: "Damaged Reservoir / Broken Supply Line",
+      routine_inspection: "Scheduled Routine Sampling Request",
+      other: "Other",
+    };
+
+    const concernText =
+      formData.primaryConcern === "other"
+        ? (formData.otherConcern?.trim() ? `Primary Concern: Other (${formData.otherConcern.trim()})` : "Primary Concern: Other")
+        : (CONCERN_LABELS[formData.primaryConcern] ? `Primary Concern: ${CONCERN_LABELS[formData.primaryConcern]}` : null);
 
     const detailedDescription = [
       formData.narrative.trim(),
-      formData.location ? `Specific Location/Purok: ${formData.location}` : null,
-      formData.households ? `Impacted Households: ${formData.households}` : null,
-      formData.requestedActions.length > 0
-        ? `Requested Interventions: ${formData.requestedActions.join(", ")}`
-        : null
+      concernText,
+      locationName
+        ? `Water Source: ${locationName}`
+        : "Water Source: Unregistered location (pinned on map)",
+      `Pinned Coordinates: ${latitude}, ${longitude} (https://www.google.com/maps?q=${latitude},${longitude})`
     ]
       .filter(Boolean)
       .join("\n\n");
 
     try {
-      // 1. Submit Official Assessment / Endorsement Record
+      // 1. Submit Normal Report Record
       const reportRes = await fetch(`${API_URL}/reports/generate`, {
         method: "POST",
         headers: {
@@ -92,12 +157,15 @@ const SubmitReport = () => {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          title: formData.title || `Barangay ${brgyName} ${isUrgent ? "Emergency Incident Report" : "Official Water Assessment"}`,
+          title: formData.title || `Barangay ${brgyName} ${isUrgent ? "Emergency Incident Report" : "Normal Report"}`,
           report_type: isUrgent ? "urgent_escalation" : "barangay_endorsement",
           type: isUrgent ? "urgent_escalation" : "barangay_endorsement",
           barangay: brgyName,
           description: detailedDescription,
-          severity: formData.severity
+          severity: formData.severity,
+          latitude,
+          longitude,
+          location_id: locationId || null
         })
       });
 
@@ -135,7 +203,10 @@ const SubmitReport = () => {
             body: JSON.stringify({
               description: `[URGENT ESCALATION from Brgy. ${brgyName}] ${formData.title}: ${detailedDescription}`,
               priority: "high",
-              barangay: brgyName
+              barangay: brgyName,
+              latitude,
+              longitude,
+              location_id: locationId || null
             })
           });
         } catch (inspErr) {
@@ -147,17 +218,21 @@ const SubmitReport = () => {
         setSuccessMsg(
           isUrgent
             ? `Emergency Incident Escalation transmitted directly to City Health Officers and Sanitization Inspectors! An expedited inspection ticket has also been dispatched.`
-            : `Barangay water assessment and endorsement successfully recorded and forwarded to the City Health Officer.`
+            : `Normal report successfully recorded and forwarded to the City Health Officer.`
         );
 
         setFormData({
           title: "",
           severity: isUrgent ? "critical" : "normal",
-          location: "",
-          households: "",
           primaryConcern: isUrgent ? "diarrhea_outbreak" : "water_quality",
-          narrative: "",
-          requestedActions: ["water_testing"]
+          otherConcern: "",
+          narrative: ""
+        });
+        setPinnedLocation({
+          latitude: 10.133,
+          longitude: 124.87,
+          locationId: null,
+          locationName: "Water Station",
         });
       } else {
         setErrorMsg(reportData.detail || "Failed to submit report.");
@@ -211,7 +286,7 @@ const SubmitReport = () => {
           }`}
         >
           <FileText size={16} />
-          <span>Official Assessment / Endorsement</span>
+          <span>Normal Report</span>
         </button>
 
         <button
@@ -255,7 +330,7 @@ const SubmitReport = () => {
           {/* Subject / Title */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-              {isEscalation ? "Incident Title / Outbreak Subject" : "Report Subject / Endorsement Title"} *
+              {isEscalation ? "Incident Title / Outbreak Subject" : "Report Subject / Title"} *
             </label>
             <input
               type="text"
@@ -275,33 +350,8 @@ const SubmitReport = () => {
             />
           </div>
 
-          {/* Grid: Urgency Level & Barangay Jurisdiction */}
+          {/* Grid: Barangay Jurisdiction & Specific Location */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                Urgency / Priority Level *
-              </label>
-              <select
-                value={formData.severity}
-                onChange={(e) => setFormData({ ...formData, severity: e.target.value })}
-                className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-xs text-slate-900 focus:outline-none transition-colors font-medium ${
-                  isEscalation ? "border-red-200 focus:border-red-600" : "border-slate-200 focus:border-blue-600"
-                }`}
-              >
-                {isEscalation ? (
-                  <>
-                    <option value="critical">Critical (Immediate Field Response Required)</option>
-                    <option value="high">High Priority (Expedited Intervention)</option>
-                  </>
-                ) : (
-                  <>
-                    <option value="normal">Normal / Routine Review</option>
-                    <option value="high">High Priority (Urgent Attention)</option>
-                  </>
-                )}
-              </select>
-            </div>
-
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Barangay Jurisdiction
@@ -311,37 +361,42 @@ const SubmitReport = () => {
                 <span>Barangay {user?.barangay || "Maasin City"}</span>
               </div>
             </div>
-          </div>
 
-          {/* Grid: Specific Location & Impacted Count */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
                 Specific Location / Water Station
               </label>
-              <input
-                type="text"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                placeholder="e.g. Purok 3 Communal Tap / Station 5"
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-              />
+              <select
+                value={selectedSourceValue}
+                onChange={(e) => handleSourceSelect(e.target.value)}
+                className={`w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none font-medium ${
+                  isEscalation ? "focus:border-red-600" : "focus:border-blue-600"
+                }`}
+              >
+                <option value="">
+                  {waterSources.length > 0
+                    ? `Select a water source (${waterSources.length} registered)`
+                    : "No registered water sources in this barangay"}
+                </option>
+                {waterSources.map((src) => (
+                  <option key={src.id} value={String(src.id)}>
+                    {src.name || "Water Source"}
+                    {src.source_type ? ` — ${src.source_type.replace(/_/g, " ")}` : ""}
+                  </option>
+                ))}
+                <option value="__custom__">Other / Unregistered location (pin on map)</option>
+              </select>
             </div>
+          </div>
 
-            <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                Impacted Households / Residents
-              </label>
-              <div className="relative">
-                <input
-                  type="text"
-                  value={formData.households}
-                  onChange={(e) => setFormData({ ...formData, households: e.target.value })}
-                  placeholder="e.g. Approx. 20 households / 65 people"
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                />
-              </div>
-            </div>
+          {/* Station Location Mapbox Pinpoint */}
+          <div>
+            <LocationPickerMap
+              value={pinnedLocation}
+              onChange={handlePinChange}
+              waterSources={waterSources}
+              accent={isEscalation ? "red" : "blue"}
+            />
           </div>
 
           {/* Primary Concern Category */}
@@ -352,14 +407,32 @@ const SubmitReport = () => {
             <select
               value={formData.primaryConcern}
               onChange={(e) => setFormData({ ...formData, primaryConcern: e.target.value })}
-              className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
+              className={`w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none font-medium ${
+                isEscalation ? "focus:border-red-600" : "focus:border-blue-600"
+              }`}
             >
               <option value="water_quality">Water Quality & Safety Assessment</option>
               <option value="diarrhea_outbreak">Waterborne Illness Symptoms (Diarrhea, Vomiting, Stomach Cramps)</option>
               <option value="turbidity_odor">Turbidity / Discoloration / Foul Chemical Odor</option>
               <option value="station_damage">Damaged Reservoir / Broken Supply Line</option>
               <option value="routine_inspection">Scheduled Routine Sampling Request</option>
+              <option value="other">Other</option>
             </select>
+
+            {formData.primaryConcern === "other" && (
+              <div className="mt-2.5">
+                <input
+                  type="text"
+                  value={formData.otherConcern}
+                  onChange={(e) => setFormData({ ...formData, otherConcern: e.target.value })}
+                  placeholder="Please specify other concern..."
+                  className={`w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none ${
+                    isEscalation ? "focus:border-red-600 focus:bg-white" : "focus:border-blue-600 focus:bg-white"
+                  }`}
+                  required
+                />
+              </div>
+            )}
           </div>
 
           {/* Detailed Statement / Narrative */}
@@ -367,7 +440,7 @@ const SubmitReport = () => {
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
               {isEscalation
                 ? "Incident Narrative & Clinical Observations *"
-                : "Official Statement / Endorsement Details *"}
+                : "Report Details *"}
             </label>
             <textarea
               rows={5}
@@ -385,51 +458,6 @@ const SubmitReport = () => {
               }`}
               required
             />
-          </div>
-
-          {/* Requested Actions / Interventions */}
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-2">
-              Requested Interventions from City Health Office / Inspectors
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-              {[
-                { key: "water_testing", label: "Microbial Water Sampling & Lab Audit" },
-                { key: "chlorination", label: "Emergency Well Chlorination / Disinfection" },
-                { key: "medical_mission", label: "CHO Medical Mission & Oresol Support" },
-                { key: "advisory", label: "City-wide / Local Boil Water Advisory" },
-                { key: "station_shutdown", label: "Temporary Water Source Closure" },
-              ].map((act) => {
-                const checked = formData.requestedActions.includes(act.key);
-                return (
-                  <button
-                    key={act.key}
-                    type="button"
-                    onClick={() => toggleAction(act.key)}
-                    className={`flex items-center gap-2 p-3 rounded-xl border text-left transition-all ${
-                      checked
-                        ? isEscalation
-                          ? "bg-red-50 border-red-300 text-red-900 font-semibold"
-                          : "bg-blue-50 border-blue-300 text-blue-900 font-semibold"
-                        : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100"
-                    }`}
-                  >
-                    <div
-                      className={`w-4 h-4 rounded flex items-center justify-center border transition-colors ${
-                        checked
-                          ? isEscalation
-                            ? "bg-red-600 border-red-600 text-white"
-                            : "bg-blue-600 border-blue-600 text-white"
-                          : "border-slate-300 bg-white"
-                      }`}
-                    >
-                      {checked && <ClipboardCheck size={12} />}
-                    </div>
-                    <span>{act.label}</span>
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           {/* Submit Button */}
@@ -453,7 +481,7 @@ const SubmitReport = () => {
               ) : (
                 <>
                   <Send size={16} />
-                  <span>Submit Official Endorsement to City Health Officer</span>
+                  <span>Submit Report to City Health Officer</span>
                 </>
               )}
             </button>

@@ -336,12 +336,13 @@ const InspectionRequests = () => {
       // 1. If a water source is selected/fixed, update the water source status and properties
       const locId = selectedLocationId || matchedWaterSource?.id;
       if (locId) {
+        const isEColiUnknown = eColi === "Unknown" || waterStatus === "unknown";
         const waterLocationPayload = {
           status: waterStatus,
           notes: notes || auditSummary,
-          bacteriological_exam: waterStatus === "safe" ? "passed" : (waterStatus === "unknown" ? "untested" : "failed"),
-          e_coli: eColi === "Present",
-          coliform_bacteria: eColi === "Present",
+          bacteriological_exam: isEColiUnknown ? "untested" : (waterStatus === "safe" ? "passed" : "failed"),
+          e_coli: isEColiUnknown ? null : (eColi === "Present"),
+          coliform_bacteria: isEColiUnknown ? null : (eColi === "Present"),
           sample_date: sampleDate,
           sample_time: sampleTime,
         };
@@ -389,6 +390,24 @@ const InspectionRequests = () => {
       setIsUpdating(false);
     }
   };
+
+  // Status counts (respecting the selected barangay)
+  const barangayScoped = inspections.filter(
+    (i) => selectedBarangay === "all" || i.barangay?.toLowerCase() === selectedBarangay.toLowerCase()
+  );
+  const statusCounts = {
+    pending: barangayScoped.filter((i) => !i.status || i.status === "pending").length,
+    in_progress: barangayScoped.filter((i) => i.status === "in_progress").length,
+    completed: barangayScoped.filter((i) => i.status === "completed" || i.status === "done").length,
+    all: barangayScoped.length,
+  };
+
+  const statusTabs = [
+    { key: "pending", label: "Pending Review", active: "bg-amber-600 text-white shadow-sm", badgeActive: "bg-amber-800/40 text-white", badge: "bg-amber-100 text-amber-800" },
+    { key: "in_progress", label: "Processing", active: "bg-blue-600 text-white shadow-sm", badgeActive: "bg-blue-800/40 text-white", badge: "bg-blue-100 text-blue-800" },
+    { key: "completed", label: "Done / Completed", active: "bg-emerald-600 text-white shadow-sm", badgeActive: "bg-emerald-800/40 text-white", badge: "bg-emerald-100 text-emerald-800" },
+    { key: "all", label: "All Requests", active: "bg-slate-800 text-white shadow-sm", badgeActive: "bg-white/20 text-white", badge: "bg-slate-100 text-slate-700" },
+  ];
 
   // Filter inspections based on Status and Barangay
   const filtered = inspections.filter((i) => {
@@ -457,40 +476,45 @@ const InspectionRequests = () => {
         </div>
       )}
 
-      {/* Filters Bar: Default is Pending Review & All Barangays */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-4">
-          <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Status</label>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-slate-50 focus:outline-none focus:border-blue-600 cursor-pointer"
-            >
-              <option value="pending">Pending Review</option>
-              <option value="in_progress">Processing / In-Progress</option>
-              <option value="completed">Done / Completed</option>
-              <option value="all">All Statuses ({inspections.length})</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">Barangay</label>
-            <select
-              value={selectedBarangay}
-              onChange={(e) => setSelectedBarangay(e.target.value)}
-              className="px-3 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-slate-50 focus:outline-none focus:border-blue-600 cursor-pointer"
-            >
-              <option value="all">All Barangays</option>
-              {barangays.map((b) => (
-                <option key={b} value={b}>Brgy. {b}</option>
-              ))}
-            </select>
-          </div>
+      {/* Status Filter Tabs (left) + Barangay filter & count (right) */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-2 items-center">
+          {statusTabs.map((tab) => {
+            const isActive = selectedStatus === tab.key;
+            return (
+              <button
+                key={tab.key}
+                id={`inspection-status-tab-${tab.key}`}
+                onClick={() => setSelectedStatus(tab.key)}
+                className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  isActive ? tab.active : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                <span>{tab.label}</span>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isActive ? tab.badgeActive : tab.badge}`}>
+                  {statusCounts[tab.key]}
+                </span>
+              </button>
+            );
+          })}
         </div>
 
-        <div className="text-xs font-medium text-slate-500">
-          Showing <span className="font-bold text-slate-900">{filtered.length}</span> active requests
+        <div className="flex flex-wrap items-center gap-3 ml-auto">
+          <div className="text-xs font-medium text-slate-500">
+            Showing <span className="font-bold text-slate-900">{filtered.length}</span> active requests
+          </div>
+          <select
+            id="inspection-barangay-filter"
+            aria-label="Filter by barangay"
+            value={selectedBarangay}
+            onChange={(e) => setSelectedBarangay(e.target.value)}
+            className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:border-blue-600 cursor-pointer"
+          >
+            <option value="all">All Barangays</option>
+            {barangays.map((b) => (
+              <option key={b} value={b}>Brgy. {b}</option>
+            ))}
+          </select>
         </div>
       </div>
 
@@ -792,7 +816,13 @@ const InspectionRequests = () => {
                     </label>
                     <select
                       value={waterStatus}
-                      onChange={(e) => setWaterStatus(e.target.value)}
+                      onChange={(e) => {
+                        const newStatus = e.target.value;
+                        setWaterStatus(newStatus);
+                        if (newStatus === "unknown") setEColi("Unknown");
+                        else if (newStatus === "safe") setEColi("Not Present");
+                        else if (newStatus === "undrinkable") setEColi("Present");
+                      }}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer"
                     >
                       <option value="unknown">Unknown</option>
@@ -808,12 +838,18 @@ const InspectionRequests = () => {
                       E. Coli Presence
                     </label>
                     <select
-                      value={eColi}
-                      onChange={(e) => setEColi(e.target.value)}
+                      value={waterStatus === "unknown" || eColi === "Unknown" ? "Unknown" : eColi}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setEColi(val);
+                        if (val === "Unknown") setWaterStatus("unknown");
+                        else if (val === "Present" && waterStatus === "safe") setWaterStatus("undrinkable");
+                      }}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer"
                     >
                       <option value="Not Present">Not Present</option>
                       <option value="Present">Present</option>
+                      <option value="Unknown">Unknown</option>
                     </select>
                   </div>
 

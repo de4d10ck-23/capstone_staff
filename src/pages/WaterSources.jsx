@@ -31,11 +31,21 @@ import {
   Camera,
   ChevronLeft,
   ChevronRight,
-  Upload
+  Upload,
+  CheckCircle2,
+  Maximize2,
+  Layers
 } from "lucide-react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import { MAASIN_BARANGAYS as barangays } from "../constants/barangays";
+import {
+  getBarangayFeature,
+  getBarangayBounds,
+  getBarangayCenter,
+  checkBarangayJurisdiction,
+  formatBarangayName
+} from "../utils/barangayBoundary";
 
 export const parseLocationPhotos = (loc) => {
   if (!loc) return [];
@@ -510,6 +520,194 @@ const WaterSources = () => {
   const map = useRef(null);
   const marker = useRef(null);
 
+  const [mapStyle, setMapStyle] = useState("mapbox://styles/mapbox/streets-v12");
+  const [locationValidation, setLocationValidation] = useState({
+    isValid: true,
+    detectedArea: "",
+    message: "",
+  });
+  const [validatingLoc, setValidatingLoc] = useState(false);
+
+  // Render boundary overlay layers on Mapbox map inside modal
+  const renderBoundaryLayer = (brgyName, shouldFit = false) => {
+    if (!map.current) return;
+
+    const target = brgyName || formData.barangay || userBarangay || "Combado";
+    const feature = getBarangayFeature(target);
+    if (!feature) return;
+
+    if (!map.current.isStyleLoaded()) {
+      map.current.once("idle", () => {
+        renderBoundaryLayer(brgyName, shouldFit);
+      });
+      return;
+    }
+
+    const sourceData = {
+      type: "FeatureCollection",
+      features: [feature],
+    };
+
+    try {
+      const existingSource = map.current.getSource("barangay-boundary");
+      if (existingSource) {
+        existingSource.setData(sourceData);
+      } else {
+        map.current.addSource("barangay-boundary", {
+          type: "geojson",
+          data: sourceData,
+        });
+      }
+
+      if (!map.current.getLayer("barangay-boundary-fill")) {
+        map.current.addLayer({
+          id: "barangay-boundary-fill",
+          type: "fill",
+          source: "barangay-boundary",
+          paint: {
+            "fill-color": "#0ea5e9",
+            "fill-opacity": 0.28,
+          },
+        });
+      }
+
+      if (!map.current.getLayer("barangay-boundary-glow")) {
+        map.current.addLayer({
+          id: "barangay-boundary-glow",
+          type: "line",
+          source: "barangay-boundary",
+          paint: {
+            "line-color": "#38bdf8",
+            "line-width": 6,
+            "line-opacity": 0.85,
+          },
+        });
+      }
+
+      if (!map.current.getLayer("barangay-boundary-line")) {
+        map.current.addLayer({
+          id: "barangay-boundary-line",
+          type: "line",
+          source: "barangay-boundary",
+          paint: {
+            "line-color": "#0284c7",
+            "line-width": 3.5,
+            "line-dasharray": [2, 1.5],
+          },
+        });
+      }
+    } catch (err) {
+      console.warn("Error rendering boundary layer:", err);
+    }
+
+    if (shouldFit) {
+      const bounds = getBarangayBounds(feature);
+      if (bounds) {
+        map.current.fitBounds(bounds, { padding: 45, maxZoom: 16.5, duration: 800 });
+      }
+    }
+  };
+
+  const handleFitToBoundary = () => {
+    if (!map.current) return;
+    const target = formData.barangay || userBarangay || "Combado";
+    renderBoundaryLayer(target, true);
+  };
+
+  const handleMapStyleChange = (newStyle) => {
+    if (newStyle === mapStyle) return;
+    setMapStyle(newStyle);
+    if (!map.current) return;
+
+    map.current.once("idle", () => {
+      renderBoundaryLayer(formData.barangay || userBarangay || "Combado", false);
+    });
+
+    map.current.setStyle(newStyle, { diff: false });
+  };
+
+  const validateCoordinates = async (lat, lng, targetBrgyOverride = null) => {
+    const targetBrgy = (targetBrgyOverride || formData.barangay || userBarangay || "Combado").trim();
+    if (isNaN(lat) || isNaN(lng)) return;
+    setValidatingLoc(true);
+
+    // 1. Strict check against GeoJSON barangay polygon boundaries
+    const jurisdiction = checkBarangayJurisdiction(lng, lat, targetBrgy);
+    if (jurisdiction.targetFeature) {
+      if (jurisdiction.isInsideTarget) {
+        setLocationValidation({
+          isValid: true,
+          detectedArea: targetBrgy,
+          message: `Location verified inside Barangay ${targetBrgy}.`,
+        });
+      } else {
+        const detected = jurisdiction.detectedBarangay;
+        setLocationValidation({
+          isValid: false,
+          detectedArea: detected || "Outside boundary",
+          message:
+            detected && detected.toLowerCase() !== targetBrgy.toLowerCase()
+              ? `Location is in Barangay ${detected} (Outside Barangay ${targetBrgy}). Please pin inside.`
+              : `Location is outside Barangay ${targetBrgy}. Please pin inside.`,
+        });
+      }
+      setValidatingLoc(false);
+      return;
+    }
+
+    // 2. Fallback to Mapbox geocoding reverse lookup
+    try {
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${MAPBOX_TOKEN}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      const features = data.features || [];
+
+      let detectedName = null;
+      for (const f of features) {
+        const pt = f.place_type || [];
+        if (pt.includes("locality") || pt.includes("neighborhood")) {
+          detectedName = f.text;
+          break;
+        } else if (pt.includes("address")) {
+          const ctx = (f.context || []).find((c) => c.id.startsWith("locality") || c.id.startsWith("neighborhood"));
+          if (ctx) {
+            detectedName = ctx.text;
+            break;
+          }
+        }
+      }
+
+      const targetLower = targetBrgy.toLowerCase();
+      const isMatch = features.some((f) => {
+        const pName = (f.place_name || "").toLowerCase();
+        const text = (f.text || "").toLowerCase();
+        return pName.includes(targetLower) || text === targetLower;
+      });
+
+      const isExplicitDifferent = detectedName && detectedName.toLowerCase() !== targetLower;
+      const isValid = isMatch && !isExplicitDifferent;
+
+      if (isValid) {
+        setLocationValidation({
+          isValid: true,
+          detectedArea: detectedName || targetBrgy,
+          message: `Location verified inside Barangay ${targetBrgy}.`
+        });
+      } else {
+        const areaText = detectedName ? `in Barangay ${detectedName}` : "outside your barangay boundary";
+        setLocationValidation({
+          isValid: false,
+          detectedArea: detectedName || "Outside boundary",
+          message: `Location is ${areaText} (outside Barangay ${targetBrgy}). Please pin inside.`
+        });
+      }
+    } catch (err) {
+      console.warn("Location boundary check error:", err);
+    } finally {
+      setValidatingLoc(false);
+    }
+  };
+
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
 
@@ -537,14 +735,19 @@ const WaterSources = () => {
     if (!log) return;
     const rawStatus = (log.status || "safe").toLowerCase();
     const normalizedStatus = rawStatus === "undrinkable" ? "contaminated" : rawStatus;
-    const eColiPresent = Boolean(log.e_coli || (log.e_coli_count && Number(log.e_coli_count) > 0));
+    const isUnknown = normalizedStatus === "unknown" || log.e_coli === null || log.e_coli === undefined;
+    const eColiPresent = isUnknown
+      ? "unknown"
+      : Boolean(log.e_coli || (log.e_coli_count && Number(log.e_coli_count) > 0))
+      ? "present"
+      : "not_present";
     setFormData((prev) => ({
       ...prev,
       status: normalizedStatus,
       e_coli_present: eColiPresent,
-      e_coli_count: log.e_coli_count || (eColiPresent ? 1 : 0),
+      e_coli_count: eColiPresent === "present" ? (log.e_coli_count || 1) : 0,
       coliform_count: log.coliform_count || 0,
-      bacteriological_exam: log.bacteriological_exam || (normalizedStatus === "safe" ? "passed" : "failed"),
+      bacteriological_exam: log.bacteriological_exam || (normalizedStatus === "safe" ? "passed" : (normalizedStatus === "unknown" ? "untested" : "failed")),
       sample_date: log.sample_date || dateStr,
       sample_time: log.sample_time || "12:00:00",
       description: log.notes || prev.description,
@@ -603,29 +806,38 @@ const WaterSources = () => {
     setErrorMsg("");
     setSuccessMsg("");
     if (sourceToEdit) {
-      const eColiPresent = Boolean(sourceToEdit.e_coli || (sourceToEdit.e_coli_count && Number(sourceToEdit.e_coli_count) > 0));
+      const rawStatus = (sourceToEdit.status || "safe").toLowerCase();
+      const normalizedStatus = rawStatus === "undrinkable" ? "contaminated" : rawStatus;
+      const isUnknown = normalizedStatus === "unknown" || sourceToEdit.e_coli === null || sourceToEdit.e_coli === undefined;
+      const eColiPresent = isUnknown
+        ? "unknown"
+        : Boolean(sourceToEdit.e_coli || (sourceToEdit.e_coli_count && Number(sourceToEdit.e_coli_count) > 0))
+        ? "present"
+        : "not_present";
       setEditingSource(sourceToEdit);
       setAssociatedReport(null);
       fetchStatusHistory(sourceToEdit.id);
-      const rawStatus = (sourceToEdit.status || "safe").toLowerCase();
-      const normalizedStatus = rawStatus === "undrinkable" ? "contaminated" : rawStatus;
+      const targetBrgy = isBrgyOfficial ? userBarangay : (sourceToEdit.barangay || "Combado");
+      const lat = sourceToEdit.latitude || 10.1330;
+      const lng = sourceToEdit.longitude || 124.8700;
 
       setFormData({
         name: sourceToEdit.name || sourceToEdit.full_name || "",
         source_type: sourceToEdit.source_type || "deep_well",
-        barangay: isBrgyOfficial ? userBarangay : (sourceToEdit.barangay || "Combado"),
-        latitude: sourceToEdit.latitude || 10.1330,
-        longitude: sourceToEdit.longitude || 124.8700,
+        barangay: targetBrgy,
+        latitude: lat,
+        longitude: lng,
         status: normalizedStatus,
         e_coli_present: eColiPresent,
-        e_coli_count: eColiPresent ? 1 : 0,
-        coliform_count: eColiPresent ? 1 : 0,
-        bacteriological_exam: sourceToEdit.bacteriological_exam || (eColiPresent ? "failed" : (normalizedStatus === "safe" ? "passed" : (normalizedStatus === "unknown" ? "untested" : "failed"))),
+        e_coli_count: eColiPresent === "present" ? 1 : 0,
+        coliform_count: eColiPresent === "present" ? 1 : 0,
+        bacteriological_exam: sourceToEdit.bacteriological_exam || (eColiPresent === "present" ? "failed" : (normalizedStatus === "safe" ? "passed" : (normalizedStatus === "unknown" ? "untested" : "failed"))),
         sample_date: sourceToEdit.sample_date || "",
         sample_time: sourceToEdit.sample_time || "",
         description: sourceToEdit.description || sourceToEdit.notes || "",
         photos: parseLocationPhotos(sourceToEdit)
       });
+      validateCoordinates(lat, lng, targetBrgy);
     } else if (prefillReport) {
       setEditingSource(null);
       setAssociatedReport(prefillReport);
@@ -640,13 +852,16 @@ const WaterSources = () => {
 
       const cleanedDesc = cleanDesc(prefillReport);
       const residentPhoto = extractPhotoProof(prefillReport);
+      const targetBrgy = isBrgyOfficial ? userBarangay : (prefillReport.barangay || userBarangay || "Combado");
+      const lat = parseFloat(prefillReport.latitude) || 10.1330;
+      const lng = parseFloat(prefillReport.longitude) || 124.8700;
 
       setFormData({
         name: prefillReport.title || "Resident Submitted Water Source",
         source_type: guessedType,
-        barangay: isBrgyOfficial ? userBarangay : (prefillReport.barangay || userBarangay || "Combado"),
-        latitude: parseFloat(prefillReport.latitude) || 10.1330,
-        longitude: parseFloat(prefillReport.longitude) || 124.8700,
+        barangay: targetBrgy,
+        latitude: lat,
+        longitude: lng,
         status: "unknown",
         e_coli_present: false,
         e_coli_count: 0,
@@ -657,16 +872,23 @@ const WaterSources = () => {
         description: cleanedDesc,
         photos: residentPhoto ? [residentPhoto] : []
       });
+      validateCoordinates(lat, lng, targetBrgy);
     } else {
       setEditingSource(null);
       setAssociatedReport(null);
       setStatusHistory([]);
+      const targetBrgy = isBrgyOfficial ? userBarangay : "Combado";
+      const feat = getBarangayFeature(targetBrgy);
+      const center = feat ? getBarangayCenter(feat) : [124.8700, 10.1330];
+      const defaultLat = center ? parseFloat(center[1].toFixed(6)) : 10.1330;
+      const defaultLng = center ? parseFloat(center[0].toFixed(6)) : 124.8700;
+
       setFormData({
         name: "",
         source_type: "deep_well",
-        barangay: isBrgyOfficial ? userBarangay : "Combado",
-        latitude: 10.1330,
-        longitude: 124.8700,
+        barangay: targetBrgy,
+        latitude: defaultLat,
+        longitude: defaultLng,
         status: "safe",
         e_coli_present: false,
         e_coli_count: 0,
@@ -677,6 +899,7 @@ const WaterSources = () => {
         description: "",
         photos: []
       });
+      validateCoordinates(defaultLat, defaultLng, targetBrgy);
     }
     setIsModalOpen(true);
   };
@@ -781,10 +1004,11 @@ const WaterSources = () => {
 
     const initialLat = parseFloat(formData.latitude) || 10.1330;
     const initialLng = parseFloat(formData.longitude) || 124.8700;
+    const currentTargetBrgy = formData.barangay || userBarangay || "Combado";
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
+      style: mapStyle,
       center: [initialLng, initialLat],
       zoom: 15,
     });
@@ -811,24 +1035,35 @@ const WaterSources = () => {
       .setLngLat([initialLng, initialLat])
       .addTo(map.current);
 
+    validateCoordinates(initialLat, initialLng, currentTargetBrgy);
+
+    map.current.on("load", () => {
+      renderBoundaryLayer(currentTargetBrgy, !editingSource && !associatedReport);
+    });
 
     marker.current.on("dragend", () => {
       const lngLat = marker.current.getLngLat();
+      const lat = parseFloat(lngLat.lat.toFixed(6));
+      const lng = parseFloat(lngLat.lng.toFixed(6));
       setFormData((prev) => ({
         ...prev,
-        latitude: parseFloat(lngLat.lat.toFixed(6)),
-        longitude: parseFloat(lngLat.lng.toFixed(6)),
+        latitude: lat,
+        longitude: lng,
       }));
+      validateCoordinates(lat, lng, formData.barangay || userBarangay);
     });
 
     map.current.on("click", (e) => {
       const { lng, lat } = e.lngLat;
+      const roundedLat = parseFloat(lat.toFixed(6));
+      const roundedLng = parseFloat(lng.toFixed(6));
       marker.current.setLngLat([lng, lat]);
       setFormData((prev) => ({
         ...prev,
-        latitude: parseFloat(lat.toFixed(6)),
-        longitude: parseFloat(lng.toFixed(6)),
+        latitude: roundedLat,
+        longitude: roundedLng,
       }));
+      validateCoordinates(roundedLat, roundedLng, formData.barangay || userBarangay);
     });
 
     const timer = setTimeout(() => {
@@ -878,6 +1113,7 @@ const WaterSources = () => {
         if (marker.current) {
           marker.current.setLngLat([lng, lat]);
         }
+        validateCoordinates(lat, lng, formData.barangay || userBarangay);
         setLocating(false);
       },
       (error) => {
@@ -903,6 +1139,7 @@ const WaterSources = () => {
       try {
         marker.current.setLngLat([lng, lat]);
         map.current.flyTo({ center: [lng, lat], zoom: 15 });
+        validateCoordinates(lat, lng, formData.barangay || userBarangay);
       } catch (err) {
         console.warn("Could not update map marker position:", err);
       }
@@ -965,16 +1202,24 @@ const WaterSources = () => {
     setErrorMsg("");
     setSuccessMsg("");
 
+    if (!locationValidation.isValid) {
+      setErrorMsg(
+        `Cannot save: The chosen location is outside Barangay ${formData.barangay || userBarangay}. Please place the pin inside the designated barangay.`
+      );
+      return;
+    }
+
     try {
       const url = editingSource
         ? `${API_URL}/water-locations/${editingSource.id}`
         : `${API_URL}/water-locations`;
       const method = editingSource ? "PUT" : "POST";
 
-      const isPresent = Boolean(formData.e_coli_present);
+      const isPresent = formData.e_coli_present === "present" || formData.e_coli_present === true;
+      const isEColiUnknown = formData.e_coli_present === "unknown" || formData.e_coli_present === null;
       const isContaminated = formData.status === "contaminated" || formData.status === "undrinkable";
       const isSafe = formData.status === "safe";
-      const isUnknown = formData.status === "unknown";
+      const isUnknown = formData.status === "unknown" || isEColiUnknown;
 
       const finalImageUrl = (formData.photos && formData.photos.length > 0)
         ? (formData.photos.length === 1 ? formData.photos[0] : JSON.stringify(formData.photos))
@@ -988,13 +1233,13 @@ const WaterSources = () => {
         latitude: parseFloat(formData.latitude),
         longitude: parseFloat(formData.longitude),
         status: isContaminated ? "contaminated" : (isUnknown ? "unknown" : (isSafe ? "safe" : "warning")),
-        e_coli: isPresent,
-        coliform_bacteria: isPresent,
-        e_coli_count: isPresent ? 1 : 0,
-        coliform_count: isPresent ? 1 : 0,
-        bacteriological_exam: isPresent || isContaminated
-          ? "failed"
-          : (isUnknown ? "untested" : "passed"),
+        e_coli: (isUnknown || isEColiUnknown) ? null : isPresent,
+        coliform_bacteria: (isUnknown || isEColiUnknown) ? null : isPresent,
+        e_coli_count: (isUnknown || isEColiUnknown) ? 0 : (isPresent ? 1 : 0),
+        coliform_count: (isUnknown || isEColiUnknown) ? 0 : (isPresent ? 1 : 0),
+        bacteriological_exam: (isUnknown || isEColiUnknown)
+          ? "untested"
+          : (isPresent || isContaminated ? "failed" : "passed"),
         image_url: finalImageUrl,
         sample_date: formData.sample_date || undefined,
         sample_time: formData.sample_time || undefined,
@@ -1430,7 +1675,12 @@ const WaterSources = () => {
                   ) : (
                     <select
                       value={formData.barangay}
-                      onChange={(e) => setFormData({ ...formData, barangay: e.target.value })}
+                      onChange={(e) => {
+                        const newBrgy = e.target.value;
+                        setFormData((prev) => ({ ...prev, barangay: newBrgy }));
+                        renderBoundaryLayer(newBrgy, true);
+                        validateCoordinates(parseFloat(formData.latitude), parseFloat(formData.longitude), newBrgy);
+                      }}
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
                     >
                       {barangays.map((b) => (
@@ -1476,6 +1726,28 @@ const WaterSources = () => {
                   </button>
                 </div>
 
+                {/* Real-time Location Boundary Verification Status */}
+                {validatingLoc ? (
+                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-xs flex items-center gap-2 animate-pulse">
+                    <Loader2 size={15} className="animate-spin text-blue-600 flex-shrink-0" />
+                    <span>Verifying coordinates within Barangay {formData.barangay || userBarangay}...</span>
+                  </div>
+                ) : !locationValidation.isValid ? (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2 shadow-2xs">
+                    <AlertCircle size={16} className="text-red-600 flex-shrink-0" />
+                    <span className="font-semibold">
+                      {locationValidation.detectedArea && locationValidation.detectedArea !== "Outside boundary"
+                        ? `Location is in Barangay ${locationValidation.detectedArea} (Outside Barangay ${formData.barangay || userBarangay}). Please pin inside.`
+                        : `Location is outside Barangay ${formData.barangay || userBarangay}. Please pin inside.`}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                    <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
+                    <span className="font-semibold">Location Verified: Inside Barangay {formData.barangay || userBarangay}</span>
+                  </div>
+                )}
+
                 {geoError && (
                   <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs flex items-center gap-2">
                     <AlertCircle size={14} className="text-amber-600 flex-shrink-0" />
@@ -1484,13 +1756,55 @@ const WaterSources = () => {
                 )}
 
                 {/* Map View */}
-                <div className="relative w-full h-64 rounded-2xl overflow-hidden border border-slate-300 shadow-md">
+                <div className="relative w-full h-72 sm:h-80 rounded-2xl overflow-hidden border border-slate-300 shadow-md">
                   <div ref={mapContainer} className="w-full h-full" />
-                  <div className="absolute top-3 left-3 bg-slate-900/85 backdrop-blur-md px-3 py-1.5 rounded-xl text-white text-[11px] font-mono shadow-md border border-white/10 pointer-events-none flex items-center gap-2 z-10">
-                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping"></span>
-                    <span>
-                      Lat: {parseFloat(formData.latitude || 0).toFixed(6)} | Lng: {parseFloat(formData.longitude || 0).toFixed(6)}
+
+                  {/* Map Style Selector (Streets / Satellite) */}
+                  <div className="absolute top-3 left-3 z-10 bg-white/95 backdrop-blur-md px-2 py-1.5 rounded-xl shadow-lg border border-slate-200/90 flex items-center gap-1 text-xs">
+                    <div className="px-1 text-slate-400">
+                      <Layers size={14} />
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleMapStyleChange("mapbox://styles/mapbox/streets-v12")}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        mapStyle === "mapbox://styles/mapbox/streets-v12"
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-slate-700 hover:text-slate-900 hover:bg-slate-100"
+                      }`}
+                    >
+                      Streets
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMapStyleChange("mapbox://styles/mapbox/satellite-streets-v12")}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        mapStyle === "mapbox://styles/mapbox/satellite-streets-v12"
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-slate-700 hover:text-slate-900 hover:bg-slate-100"
+                      }`}
+                    >
+                      Satellite
+                    </button>
+                  </div>
+
+                  {/* Floating Boundary Badge & Focus Button on bottom-left of map */}
+                  <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl text-slate-800 text-xs font-medium shadow-lg border border-slate-200/90 flex items-center gap-2.5 z-10">
+                    <span className="w-3.5 h-3.5 rounded-full bg-sky-500/20 border-2 border-sky-600 flex items-center justify-center">
+                      <span className="w-1.5 h-1.5 rounded-full bg-sky-600"></span>
                     </span>
+                    <span className="font-semibold text-slate-700">
+                      Barangay {formData.barangay || userBarangay} Boundary
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleFitToBoundary}
+                      className="ml-1 px-2.5 py-0.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[11px] font-bold border border-sky-200 transition-colors flex items-center gap-1 cursor-pointer"
+                      title="Focus view on designated barangay boundary"
+                    >
+                      <Maximize2 size={11} />
+                      <span>Fit Boundary</span>
+                    </button>
                   </div>
                 </div>
 
@@ -1555,7 +1869,13 @@ const WaterSources = () => {
                       setFormData((prev) => ({
                         ...prev,
                         status: newStatus,
-                        e_coli_present: (newStatus === "contaminated" || newStatus === "undrinkable") ? true : (newStatus === "safe" ? false : prev.e_coli_present)
+                        e_coli_present: (newStatus === "contaminated" || newStatus === "undrinkable")
+                          ? "present"
+                          : newStatus === "safe"
+                          ? "not_present"
+                          : newStatus === "unknown"
+                          ? "unknown"
+                          : prev.e_coli_present
                       }));
                     }}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
@@ -1572,21 +1892,30 @@ const WaterSources = () => {
                     E. Coli Presence
                   </label>
                   <select
-                    value={formData.e_coli_present ? "present" : "not_present"}
+                    value={
+                      formData.status === "unknown" || formData.e_coli_present === "unknown" || formData.e_coli_present === null
+                        ? "unknown"
+                        : (formData.e_coli_present === "present" || formData.e_coli_present === true ? "present" : "not_present")
+                    }
                     onChange={(e) => {
-                      const isPresent = e.target.value === "present";
+                      const val = e.target.value;
                       setFormData((prev) => ({
                         ...prev,
-                        e_coli_present: isPresent,
-                        e_coli_count: isPresent ? 1 : 0,
-                        coliform_count: isPresent ? 1 : 0,
-                        status: isPresent && prev.status === "safe" ? "contaminated" : prev.status
+                        e_coli_present: val,
+                        e_coli_count: val === "present" ? 1 : 0,
+                        coliform_count: val === "present" ? 1 : 0,
+                        status: val === "present" && (prev.status === "safe" || prev.status === "unknown")
+                          ? "contaminated"
+                          : val === "unknown"
+                          ? "unknown"
+                          : prev.status
                       }));
                     }}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
                   >
                     <option value="not_present">Not Present</option>
                     <option value="present">Present</option>
+                    <option value="unknown">Unknown</option>
                   </select>
                 </div>
               </div>
