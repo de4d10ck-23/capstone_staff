@@ -24,6 +24,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import officialFloodHazards from "../data/maasin_flood_hazards.json";
 import officialLandslideHazards from "../data/maasin_landslide_hazards.json";
+import { getBarangayPopulation } from "../constants/barangays";
 
 const MAPBOX_TOKEN =
   import.meta.env.VITE_MAPBOX_KEY ||
@@ -46,8 +47,8 @@ const WaterMap = () => {
   const [landslideHazards, setLandslideHazards] = useState(officialLandslideHazards);
 
   // Layer Toggles
-  const [showFloodZones, setShowFloodZones] = useState(true);
-  const [showLandslideZones, setShowLandslideZones] = useState(true);
+  const [showFloodZones, setShowFloodZones] = useState(false);
+  const [showLandslideZones, setShowLandslideZones] = useState(false);
   const [showWaterHeatmap, setShowWaterHeatmap] = useState(false);
   const [showMarkers, setShowMarkers] = useState(true);
 
@@ -304,6 +305,7 @@ const WaterMap = () => {
 
     const waterSourceId = "model-water-heatmap-source";
     const waterLayerId = "water-contamination-heat";
+    const waterAuraLayerId = "water-contamination-aura";
 
     if (wData?.features?.length > 0) {
       if (map.current.getSource(waterSourceId)) {
@@ -314,6 +316,50 @@ const WaterMap = () => {
           data: wData,
         });
 
+        // 1. PHYSICAL PLUME SIZE SCALING (Option B): Soft radial plume whose physical radius expands with barangay population
+        map.current.addLayer({
+          id: waterAuraLayerId,
+          type: "circle",
+          source: waterSourceId,
+          layout: {
+            visibility: isWaterHeatActive ? "visible" : "none",
+          },
+          paint: {
+            // Circle radius scales with zoom and with individual station's population-derived radius_scale
+            "circle-radius": [
+              "*",
+              ["coalesce", ["get", "radius_scale"], 1.0],
+              [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                10, 8,
+                12, 18,
+                14, 42,
+                16, 95,
+                18, 200
+              ]
+            ],
+            "circle-color": [
+              "match",
+              ["get", "status"],
+              "undrinkable", "rgba(220, 38, 38, 0.70)",
+              "warning", "rgba(234, 179, 8, 0.60)",
+              "rgba(59, 130, 246, 0.35)"
+            ],
+            "circle-blur": 0.85,
+            "circle-opacity": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              10, 0.50,
+              14, 0.65,
+              18, 0.75
+            ],
+          },
+        });
+
+        // 2. EXPOSURE INTENSITY SCALING (Option A): Smooth multi-station continuous kernel density blending
         map.current.addLayer({
           id: waterLayerId,
           type: "heatmap",
@@ -338,19 +384,52 @@ const WaterMap = () => {
               "interpolate",
               ["exponential", 2],
               ["zoom"],
-              10, 2,
-              12, 4,
-              14, 14,
-              18, 224
+              10, 6,
+              12, 14,
+              14, 32,
+              18, 280
             ],
             "heatmap-opacity": 0.82,
           },
+        });
+
+        // Allow clicking anywhere on a contamination plume to inspect station & population metrics
+        map.current.on("click", waterAuraLayerId, (e) => {
+          if (e.features && e.features.length > 0) {
+            const props = e.features[0].properties;
+            setSelectedLocation({
+              id: props.station_id,
+              full_name: props.name,
+              name: props.name,
+              barangay: props.barangay,
+              barangay_population: props.barangay_population,
+              exposure_radius_meters: props.exposure_radius_meters,
+              status: props.status,
+              coliform_bacteria: props.coliform_count,
+              e_coli: props.e_coli_count,
+            });
+            setSelectedHazardZone(null);
+          }
+        });
+
+        map.current.on("mouseenter", waterAuraLayerId, () => {
+          if (map.current) map.current.getCanvas().style.cursor = "pointer";
+        });
+        map.current.on("mouseleave", waterAuraLayerId, () => {
+          if (map.current) map.current.getCanvas().style.cursor = "";
         });
       }
 
       if (map.current.getLayer(waterLayerId)) {
         map.current.setLayoutProperty(
           waterLayerId,
+          "visibility",
+          isWaterHeatActive ? "visible" : "none"
+        );
+      }
+      if (map.current.getLayer(waterAuraLayerId)) {
+        map.current.setLayoutProperty(
+          waterAuraLayerId,
           "visibility",
           isWaterHeatActive ? "visible" : "none"
         );
@@ -594,50 +673,6 @@ const WaterMap = () => {
             ))}
           </select>
 
-          {/* Official Flood Hazard Layer Toggle */}
-          <button
-            onClick={() => {
-              const next = !showFloodZones;
-              setShowFloodZones(next);
-              showFloodZonesRef.current = next;
-              renderHazardLayers();
-            }}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all cursor-pointer ${
-              showFloodZones
-                ? "bg-rose-50 text-rose-800 border-rose-300 shadow-xs"
-                : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-            }`}
-            title="Toggle Official Flood Susceptibility Zones (DENR-MGB Study Area)"
-          >
-            <Waves size={13} className={showFloodZones ? "text-rose-600" : "text-slate-400"} />
-            <span>Flood Zones</span>
-            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${showFloodZones ? "bg-rose-600 text-white" : "bg-slate-100 text-slate-500"}`}>
-              {showFloodZones ? `${floodHazards.features?.length || 18}` : "OFF"}
-            </span>
-          </button>
-
-          {/* Official Landslide Hazard Layer Toggle */}
-          <button
-            onClick={() => {
-              const next = !showLandslideZones;
-              setShowLandslideZones(next);
-              showLandslideZonesRef.current = next;
-              renderHazardLayers();
-            }}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all cursor-pointer ${
-              showLandslideZones
-                ? "bg-purple-50 text-purple-800 border-purple-300 shadow-xs"
-                : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-            }`}
-            title="Toggle Official Landslide Susceptibility Zones (DENR-MGB)"
-          >
-            <Mountain size={13} className={showLandslideZones ? "text-purple-600" : "text-slate-400"} />
-            <span>Landslide Zones</span>
-            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${showLandslideZones ? "bg-purple-600 text-white" : "bg-slate-100 text-slate-500"}`}>
-              {showLandslideZones ? "ON" : "OFF"}
-            </span>
-          </button>
-
           {/* Water Contamination Heatmap Toggle */}
           <button
             onClick={() => {
@@ -726,72 +761,26 @@ const WaterMap = () => {
           </button>
         </div>
 
-        {/* Official Environmental Hazard & Contamination Heatmap Legend */}
-        <div className="absolute bottom-4 left-3 sm:bottom-5 sm:left-4 z-20 bg-white/95 backdrop-blur-md p-3.5 rounded-2xl shadow-xl border border-slate-200/90 max-w-[290px] sm:max-w-xs text-xs animate-fade-in space-y-2.5">
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-1.5">
-            <span className="font-bold text-[11px] text-slate-800 flex items-center gap-1.5">
-              <ShieldAlert size={13} className="text-rose-600" />
-              GIS Environmental Risk Layers
-            </span>
-            <span className="text-[9px] text-emerald-700 font-bold bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              DENR-MGB Map
-            </span>
-          </div>
-
-          {/* Hazard Zones Legend */}
-          {(showFloodZones || showLandslideZones) && (
-            <div className="space-y-1.5">
-              <div className="text-[10px] font-semibold text-slate-700">Official Susceptibility Zones:</div>
-              <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                {showFloodZones && (
-                  <>
-                    <div className="flex items-center gap-1.5 text-slate-700">
-                      <span className="w-3 h-3 rounded-sm bg-[#ef4444] opacity-80 border border-red-700 flex-shrink-0" />
-                      <span>High Flood (HF)</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-slate-700">
-                      <span className="w-3 h-3 rounded-sm bg-[#f59e0b] opacity-80 border border-amber-600 flex-shrink-0" />
-                      <span>Moderate Flood (MF)</span>
-                    </div>
-                  </>
-                )}
-                {showLandslideZones && (
-                  <>
-                    <div className="flex items-center gap-1.5 text-slate-700">
-                      <span className="w-3 h-3 rounded-sm bg-[#9333ea] opacity-80 border border-purple-800 flex-shrink-0" />
-                      <span>High Landslide</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-slate-700">
-                      <span className="w-3 h-3 rounded-sm bg-[#f97316] opacity-80 border border-orange-700 flex-shrink-0" />
-                      <span>Moderate Landslide</span>
-                    </div>
-                  </>
-                )}
-              </div>
+        {/* Water Contamination Heatmap Spectrum (shown only when heatmap is active) */}
+        {showWaterHeatmap && (
+          <div className="absolute bottom-4 left-3 sm:bottom-5 sm:left-4 z-20 bg-white/95 backdrop-blur-md p-3.5 rounded-2xl shadow-xl border border-slate-200/90 max-w-[270px] text-xs animate-fade-in space-y-2">
+            <div className="flex items-center justify-between text-[11px] font-bold text-slate-800">
+              <span className="flex items-center gap-1.5">
+                <Droplets size={13} className="text-rose-600" />
+                Contamination Exposure
+              </span>
+              <span className="text-[9px] text-rose-700 font-bold bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                Pop-Weighted
+              </span>
             </div>
-          )}
-
-          {/* Water Contamination Heatmap Spectrum */}
-          {showWaterHeatmap && (
-            <div className="space-y-1 pt-1 border-t border-slate-100">
-              <div className="flex items-center justify-between text-[10px] font-semibold text-slate-700">
-                <span>Water Contamination Risk</span>
-                <span className="text-rose-600 text-[9px] font-bold">Pins Hidden</span>
-              </div>
-              <div className="h-2 w-full rounded-full bg-gradient-to-r from-blue-400 via-yellow-400 via-orange-500 to-red-600" />
-              <div className="flex justify-between text-[9px] text-slate-400 font-medium">
-                <span>Potable</span>
-                <span>Warning</span>
-                <span>Contaminated</span>
-              </div>
+            <div className="h-2 w-full rounded-full bg-gradient-to-r from-blue-400 via-yellow-400 via-orange-500 to-red-600" />
+            <div className="flex justify-between text-[9px] text-slate-500 font-medium">
+              <span>Safe</span>
+              <span>Warning</span>
+              <span>Contaminated</span>
             </div>
-          )}
-
-          <div className="text-[9px] text-slate-500 pt-1 border-t border-slate-100 leading-tight">
-            Water sources in High Hazard zones receive elevated contamination vulnerability weight during rainfall events.
           </div>
-        </div>
+        )}
 
         {/* Selected Water Location Detail Card */}
         {selectedLocation && (
@@ -847,6 +836,22 @@ const WaterMap = () => {
                   </span>
                 )}
               </div>
+
+              <div className="flex justify-between items-center py-0.5">
+                <span className="text-slate-500">Barangay Pop.:</span>
+                <span className="font-semibold text-slate-800">
+                  {Number(selectedLocation.barangay_population || getBarangayPopulation(selectedLocation.barangay)).toLocaleString()} residents
+                </span>
+              </div>
+
+              {selectedLocation.exposure_radius_meters && (
+                <div className="flex justify-between items-center py-0.5">
+                  <span className="text-slate-500">Exposure Radius:</span>
+                  <span className="font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100">
+                    ~{selectedLocation.exposure_radius_meters}m plume
+                  </span>
+                </div>
+              )}
 
               {selectedLocation.sample_date && (
                 <div className="flex justify-between pt-1 border-t border-slate-100 text-[11px]">

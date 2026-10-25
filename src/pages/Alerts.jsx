@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { Bell, Send, CheckCircle2, AlertCircle, Radio, Trash2, Calendar, Users } from "lucide-react";
+import { Bell, Send, CheckCircle2, AlertCircle, Radio, Trash2, Calendar, Smartphone } from "lucide-react";
 import { MAASIN_BARANGAYS as barangays } from "../constants/barangays";
 
 const Alerts = () => {
@@ -12,7 +12,6 @@ const Alerts = () => {
   const [type, setType] = useState("warning");
   const isBarangayOfficial = user?.role === "barangay_official";
   const [barangay, setBarangay] = useState(isBarangayOfficial ? (user?.barangay || "Combado") : "all");
-  const [targetRole, setTargetRole] = useState("all");
 
   const [isSending, setIsSending] = useState(false);
   const [successMsg, setSuccessMsg] = useState("");
@@ -46,17 +45,12 @@ const Alerts = () => {
     setIsSending(true);
 
     try {
-      let roles = [];
-      if (targetRole === "residents") roles = ["resident"];
-      else if (targetRole === "officials") roles = ["barangay_official"];
-      else roles = ["resident", "barangay_official"];
-
       const payload = {
         title: title.trim(),
         message: message.trim(),
         type,
         barangay: isBarangayOfficial ? user?.barangay : (barangay === "all" ? null : barangay),
-        target_roles: roles
+        target_roles: ["resident"]
       };
 
       const res = await fetch(`${API_URL}/notifications`, {
@@ -70,7 +64,11 @@ const Alerts = () => {
 
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg("Public advisory alert broadcasted successfully!");
+        if (data.pushed_to_devices) {
+          setSuccessMsg("🚨 Emergency Outbreak broadcasted & dispatched as instant Web Push notifications to resident mobile devices!");
+        } else {
+          setSuccessMsg("📢 Advisory notice posted to the in-app notice feed. (Push notifications reserved strictly for Emergency Outbreak).");
+        }
         setTitle("");
         setMessage("");
         fetchNotifications();
@@ -111,15 +109,15 @@ const Alerts = () => {
       </div>
 
       {successMsg && (
-        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-          <CheckCircle2 size={16} className="text-emerald-600" />
+        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2 shadow-sm">
+          <CheckCircle2 size={16} className="text-emerald-600 flex-shrink-0" />
           <span>{successMsg}</span>
         </div>
       )}
 
       {errorMsg && (
-        <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
-          <AlertCircle size={16} className="text-red-600" />
+        <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2 shadow-sm">
+          <AlertCircle size={16} className="text-red-600 flex-shrink-0" />
           <span>{errorMsg}</span>
         </div>
       )}
@@ -151,7 +149,7 @@ const Alerts = () => {
                 <select
                   value={type}
                   onChange={(e) => setType(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
                 >
                   <option value="warning">Warning / Boil Water</option>
                   <option value="critical">Emergency Outbreak</option>
@@ -185,19 +183,6 @@ const Alerts = () => {
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Target Audience</label>
-              <select
-                value={targetRole}
-                onChange={(e) => setTargetRole(e.target.value)}
-                className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-              >
-                <option value="all">Residents & Officials</option>
-                <option value="residents">Residents Only</option>
-                <option value="officials">Barangay Officials Only</option>
-              </select>
-            </div>
-
-            <div>
               <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Notice Message</label>
               <textarea
                 rows={4}
@@ -212,10 +197,20 @@ const Alerts = () => {
             <button
               type="submit"
               disabled={isSending}
-              className="w-full py-3.5 rounded-full bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+              className={`w-full py-3.5 rounded-full text-white font-semibold text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer ${
+                type === "critical"
+                  ? "bg-red-600 hover:bg-red-700 shadow-red-500/20"
+                  : "bg-blue-900 hover:bg-blue-800"
+              }`}
             >
               <Send size={14} />
-              <span>{isSending ? "Broadcasting..." : "Broadcast Public Notice"}</span>
+              <span>
+                {isSending
+                  ? "Broadcasting..."
+                  : type === "critical"
+                  ? "Broadcast Emergency Outbreak"
+                  : "Post Public Advisory Notice"}
+              </span>
             </button>
           </form>
         </div>
@@ -263,7 +258,22 @@ const Alerts = () => {
                               ? "bg-amber-100 text-amber-800"
                               : "bg-blue-100 text-blue-800"
                           }`}>
-                            {n.type || "Notice"}
+                            {isCritical ? "Outbreak" : n.type || "Notice"}
+                          </span>
+
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold flex items-center gap-1 border ${
+                            isCritical
+                              ? "bg-red-50 text-red-700 border-red-200"
+                              : "bg-slate-100 text-slate-600 border-slate-200"
+                          }`}>
+                            {isCritical ? (
+                              <>
+                                <Smartphone size={10} className="text-red-600" />
+                                <span>Web Push Sent</span>
+                              </>
+                            ) : (
+                              <span>Feed Only</span>
+                            )}
                           </span>
 
                           <span className="text-[11px] font-semibold text-slate-700 bg-white px-2 py-0.5 rounded-full border border-slate-200">

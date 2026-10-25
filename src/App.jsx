@@ -48,15 +48,23 @@ function App() {
             
             {/* Shared Staff Routes */}
             <Route path="dashboard" element={<Dashboard />} />
-            <Route path="map" element={<WaterMap />} />
+            <Route path="map" element={
+              <RoleRoute allowedRoles={['sanitization_inspector', 'barangay_official', 'admin']}>
+                <WaterMap />
+              </RoleRoute>
+            } />
             <Route path="analytics" element={
-              <RoleRoute allowedRoles={['sanitization_inspector', 'city_health_officer', 'admin']}>
+              <RoleRoute allowedRoles={['sanitization_inspector', 'admin']}>
                 <Analytics />
               </RoleRoute>
             } />
-            <Route path="alerts" element={<Alerts />} />
+            <Route path="alerts" element={
+              <RoleRoute allowedRoles={['sanitization_inspector', 'barangay_official', 'admin']}>
+                <Alerts />
+              </RoleRoute>
+            } />
             <Route path="inspections" element={
-              <RoleRoute allowedRoles={['sanitization_inspector', 'city_health_officer', 'admin']}>
+              <RoleRoute allowedRoles={['sanitization_inspector', 'admin']}>
                 <InspectionRequests />
               </RoleRoute>
             } />

@@ -56,7 +56,7 @@ const Layout = () => {
 
     if (user?.role === 'city_health_officer') {
       return [
-        ...baseNav,
+        { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
         { to: "/view-reports", icon: <FileText size={20} />, label: "View Reports" },
       ];
     }
@@ -67,13 +67,13 @@ const Layout = () => {
   const getRoleDisplayName = (role) => {
     switch (role) {
       case 'city_health_officer':
-        return 'City Health Officer';
+        return 'CHU - City Health Officer';
       case 'sanitization_inspector':
-        return 'Sanitization Inspector';
+        return 'CHU - Sanitization Inspector';
       case 'barangay_official':
         return 'Barangay Official';
       case 'admin':
-        return 'Administrator';
+        return 'CHU - Administrator';
       case 'resident':
         return 'Resident';
       default:
@@ -143,11 +143,11 @@ const Layout = () => {
           </div>
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm text-slate-900 truncate">{user?.full_name}</p>
-            <p className="text-xs text-blue-600 font-medium truncate">
-              {user?.role === "barangay_official" && user?.barangay
-                ? `Brgy. ${user.barangay} Official`
-                : getRoleDisplayName(user?.role)}
-            </p>
+            {user?.role === "barangay_official" && (
+              <p className="text-xs text-blue-600 font-medium truncate">
+                {user?.barangay ? `Brgy. ${user.barangay} Official` : "Barangay Official"}
+              </p>
+            )}
           </div>
         </div>
 
@@ -196,12 +196,6 @@ const Layout = () => {
               <Menu size={20} />
             </button>
             <span className="text-xs sm:text-sm font-semibold text-slate-700 truncate">Staff Operational Portal</span>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-4">
-            <span className="text-xs font-semibold px-3 py-1 bg-blue-50 text-blue-800 rounded-full border border-blue-200 truncate">
-              {getRoleDisplayName(user?.role)}
-            </span>
           </div>
         </header>
         
