@@ -64,11 +64,7 @@ const Alerts = () => {
 
       const data = await res.json();
       if (data.success) {
-        if (data.pushed_to_devices) {
-          setSuccessMsg("🚨 Emergency Outbreak broadcasted & dispatched as instant Web Push notifications to resident mobile devices!");
-        } else {
-          setSuccessMsg("📢 Advisory notice posted to the in-app notice feed. (Push notifications reserved strictly for Emergency Outbreak).");
-        }
+        setSuccessMsg(data.message || "Advisory posted.");
         setTitle("");
         setMessage("");
         fetchNotifications();
