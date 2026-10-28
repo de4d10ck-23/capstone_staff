@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import {
   Droplets,
@@ -9,18 +8,17 @@ import {
   MapPin,
   RefreshCw,
   Printer,
-  ChevronRight,
-  ExternalLink,
-  ShieldAlert,
   Flame,
   CheckCircle2,
-  XCircle,
   HelpCircle,
   Clock,
   Building2,
   Activity,
   Layers,
-  ArrowUpRight
+  Pencil,
+  Search,
+  Save,
+  X
 } from "lucide-react";
 import {
   BarChart,
@@ -35,7 +33,13 @@ import {
   Pie,
   Cell
 } from "recharts";
-import { MAASIN_BARANGAYS, getBarangayPopulation } from "../constants/barangays";
+import {
+  MAASIN_BARANGAYS,
+  MAASIN_BARANGAY_POPULATION,
+  getBarangayPopulation,
+  getStoredBarangayPopulations,
+  saveBarangayPopulations
+} from "../constants/barangays";
 
 const Analytics = () => {
   const { token, API_URL, user } = useAuth();
@@ -44,7 +48,63 @@ const Analytics = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [selectedBarangay, setSelectedBarangay] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [populations, setPopulations] = useState(() => getStoredBarangayPopulations());
+  const [isPopModalOpen, setIsPopModalOpen] = useState(false);
+  const [popSearch, setPopSearch] = useState("");
+  const [tempPopulations, setTempPopulations] = useState(populations);
+  const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
+
+  const handleOpenPopModal = () => {
+    setTempPopulations({ ...populations });
+    setPopSearch("");
+    setIsPopModalOpen(true);
+  };
+
+  const handlePopChange = (barangay, val) => {
+    const num = parseInt(val, 10);
+    setTempPopulations((prev) => ({
+      ...prev,
+      [barangay]: isNaN(num) ? 0 : Math.max(0, num),
+    }));
+  };
+
+  const handleSavePopulations = async (e) => {
+    e.preventDefault();
+    // Save locally first
+    saveBarangayPopulations(tempPopulations);
+    setPopulations(tempPopulations);
+    setIsPopModalOpen(false);
+
+    // Sync to backend so the heatmap recalculates with updated populations
+    try {
+      const res = await fetch(`${API_URL}/analytics/populations`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify(tempPopulations),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSaveSuccessMsg(`Populations saved — heatmap is recalculating with updated values.`);
+      } else {
+        setSaveSuccessMsg("Populations saved locally. Backend sync failed.");
+      }
+    } catch (err) {
+      console.error("Failed to sync populations to backend:", err);
+      setSaveSuccessMsg("Populations saved locally. Backend sync failed.");
+    }
+    setTimeout(() => setSaveSuccessMsg(""), 5000);
+  };
+
+
+
+  const filteredPopBarangays = useMemo(() => {
+    const q = popSearch.trim().toLowerCase();
+    if (!q) return MAASIN_BARANGAYS;
+    return MAASIN_BARANGAYS.filter((bgy) => bgy.toLowerCase().includes(q));
+  }, [popSearch]);
 
   const fetchAnalyticsData = async () => {
     try {
@@ -130,7 +190,7 @@ const Analytics = () => {
 
     let exposedPopulation = 0;
     contaminatedBarangays.forEach((bgy) => {
-      exposedPopulation += getBarangayPopulation(bgy);
+      exposedPopulation += getBarangayPopulation(bgy, populations);
     });
 
     return {
@@ -142,9 +202,10 @@ const Analytics = () => {
       safeRate,
       contaminatedRate,
       contaminatedBarangaysCount: contaminatedBarangays.size,
+      contaminatedBarangaysList: Array.from(contaminatedBarangays),
       exposedPopulation,
     };
-  }, [filteredLocations, locations]);
+  }, [filteredLocations, locations, populations]);
 
   // Group data by barangay for the Bar Chart & Ranking Table
   const barangayAnalytics = useMemo(() => {
@@ -160,7 +221,7 @@ const Analytics = () => {
           warning: 0,
           contaminated: 0,
           untested: 0,
-          population: getBarangayPopulation(b),
+          population: getBarangayPopulation(b, populations),
         };
       }
       map[b].total += 1;
@@ -197,7 +258,7 @@ const Analytics = () => {
     // Sort by highest contamination count first
     list.sort((a, b) => b.contaminated - a.contaminated || b.total - a.total);
     return list;
-  }, [locations]);
+  }, [locations, populations]);
 
   // Top 10 barangays for the chart
   const barChartData = useMemo(() => {
@@ -213,23 +274,6 @@ const Analytics = () => {
       { name: "Untested / Pending", value: stats.untested, color: "#94a3b8" },
     ].filter((item) => item.value > 0);
   }, [stats]);
-
-  // Critical stations list for quick sanitary inspector intervention
-  const criticalStations = useMemo(() => {
-    return locations
-      .filter((l) => {
-        const st = (l.status || "").toLowerCase();
-        const exam = (l.bacteriological_exam || "").toLowerCase();
-        const isContam = st in { contaminated: 1, undrinkable: 1 } || exam === "failed" || l.e_coli === true;
-        const matchBgy = selectedBarangay === "all" || l.barangay === selectedBarangay;
-        const matchQuery =
-          !searchTerm ||
-          (l.full_name || l.name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-          (l.barangay || "").toLowerCase().includes(searchTerm.toLowerCase());
-        return isContam && matchBgy && matchQuery;
-      })
-      .slice(0, 12);
-  }, [locations, selectedBarangay, searchTerm]);
 
   return (
     <div className="space-y-7 animate-fade-in font-sans pb-12">
@@ -287,6 +331,22 @@ const Analytics = () => {
           </button>
         </div>
       </div>
+
+      {saveSuccessMsg && (
+        <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-semibold flex items-center justify-between shadow-xs animate-fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 size={16} className="text-emerald-600" />
+            <span>{saveSuccessMsg}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSaveSuccessMsg("")}
+            className="text-emerald-600 hover:text-emerald-800 p-1"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
 
       {/* Top 4 Public Health KPI Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -361,10 +421,17 @@ const Analytics = () => {
         </div>
 
         {/* Card 4: Population in Affected Catchments */}
-        <div className="bg-white p-5 rounded-2xl border border-indigo-100 shadow-xs hover:shadow-md transition-shadow relative overflow-hidden group">
+        <div
+          onClick={handleOpenPopModal}
+          className="bg-white p-5 rounded-2xl border border-indigo-100 shadow-xs hover:shadow-md hover:border-indigo-300 transition-all cursor-pointer relative overflow-hidden group select-none active:scale-[0.99]"
+          title="Click to view and edit barangay populations"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider">
-              Population at Risk
+            <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+              <span>Population at Risk</span>
+              <span className="text-[10px] font-medium text-indigo-600 bg-indigo-50 group-hover:bg-indigo-100 px-2 py-0.5 rounded-full border border-indigo-100/80 inline-flex items-center gap-1 transition-colors">
+                <Pencil size={10} /> Edit
+              </span>
             </span>
             <span className="p-2 rounded-xl bg-indigo-50 text-indigo-600 group-hover:scale-110 transition-transform">
               <Users size={16} />
@@ -374,9 +441,6 @@ const Analytics = () => {
             <h3 className="text-3xl font-extrabold text-indigo-700">
               {loading ? "..." : stats.exposedPopulation.toLocaleString()}
             </h3>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200">
-              PSA 2020
-            </span>
           </div>
           <p className="text-[11px] text-slate-500 mt-2 flex items-center gap-1">
             <Building2 size={11} className="text-indigo-500" />
@@ -400,13 +464,6 @@ const Analytics = () => {
                   Comparison of Certified Safe vs Contaminated stations across monitored barangays
                 </p>
               </div>
-              <Link
-                to="/portal/map"
-                className="text-xs font-semibold text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline self-start sm:self-auto"
-              >
-                <span>View on Heatmap</span>
-                <ArrowUpRight size={13} />
-              </Link>
             </div>
 
             <div className="h-72 w-full pt-2">
@@ -432,9 +489,9 @@ const Analytics = () => {
                     formatter={(val, name) => [`${val} Stations`, name]}
                   />
                   <Legend wrapperStyle={{ fontSize: "12px", paddingTop: "15px" }} />
-                  <Bar dataKey="safe" name="Safe (Potable)" fill="#10b981" radius={[4, 4, 0, 0]} stackId="a" />
-                  <Bar dataKey="warning" name="Warning (Coliform)" fill="#f59e0b" radius={[0, 0, 0, 0]} stackId="a" />
-                  <Bar dataKey="contaminated" name="Contaminated (Failed)" fill="#ef4444" radius={[4, 4, 0, 0]} stackId="a" />
+                  <Bar dataKey="safe" name="Safe" fill="#10b981" radius={[4, 4, 0, 0]} stackId="a" />
+                  <Bar dataKey="warning" name="Warning" fill="#f59e0b" radius={[0, 0, 0, 0]} stackId="a" />
+                  <Bar dataKey="contaminated" name="Contaminated" fill="#ef4444" radius={[4, 4, 0, 0]} stackId="a" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -515,215 +572,251 @@ const Analytics = () => {
         </div>
       </div>
 
-      {/* Row 2: Priority Surveillance Ranking & Health Interventions */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Table: Barangay Risk Prioritization */}
-        <div className="lg:col-span-8 bg-white p-6 rounded-3xl border border-slate-200/90 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Barangay Surveillance Ranking</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Prioritized by contaminated source count and 2020 PSA census population exposure
-              </p>
-            </div>
-            <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
-              {barangayAnalytics.length} Barangays Monitored
-            </span>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="pb-3 font-semibold">Rank & Barangay</th>
-                  <th className="pb-3 font-semibold">Total Water Points</th>
-                  <th className="pb-3 font-semibold">Contaminated</th>
-                  <th className="pb-3 font-semibold">Contamination Rate</th>
-                  <th className="pb-3 font-semibold">2020 Population</th>
-                  <th className="pb-3 font-semibold">Urgency</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {barangayAnalytics.slice(0, 7).map((item, index) => (
-                  <tr key={item.name} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="py-3 font-bold text-slate-800 flex items-center gap-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] flex items-center justify-center font-mono">
-                        {index + 1}
-                      </span>
-                      <span>Barangay {item.name}</span>
-                    </td>
-                    <td className="py-3 text-slate-600">{item.total} stations</td>
-                    <td className="py-3 font-bold text-rose-600">{item.contaminated} sources</td>
-                    <td className="py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-20 bg-slate-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-full rounded-full ${
-                              item.failRate >= 60 ? "bg-rose-500" : item.failRate >= 30 ? "bg-amber-500" : "bg-emerald-500"
-                            }`}
-                            style={{ width: `${item.failRate}%` }}
-                          />
-                        </div>
-                        <span className="font-semibold text-slate-700">{item.failRate}%</span>
-                      </div>
-                    </td>
-                    <td className="py-3 font-mono text-slate-700">{item.population.toLocaleString()}</td>
-                    <td className="py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase ${
-                          item.urgency === "Critical"
-                            ? "bg-rose-100 text-rose-800 border border-rose-200"
-                            : item.urgency === "Elevated"
-                            ? "bg-amber-100 text-amber-800 border border-amber-200"
-                            : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                        }`}
-                      >
-                        {item.urgency}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Actionable Health Interventions & Advisory Shortcuts */}
-        <div className="lg:col-span-4 space-y-4">
-          <div className="bg-gradient-to-br from-rose-50 to-orange-50/60 p-5 rounded-3xl border border-rose-100 shadow-xs space-y-3">
-            <div className="flex items-center gap-2 text-rose-800 font-bold text-sm">
-              <ShieldAlert size={18} className="text-rose-600" />
-              <span>Sanitation Inspector Action Alerts</span>
-            </div>
-            <p className="text-xs text-rose-900/80 leading-relaxed">
-              Based on the latest sanitary inspections, <strong>{stats.contaminated} water points</strong> failed bacteriological criteria and require active public health boil-water warnings.
-            </p>
-            <div className="pt-2 flex flex-col gap-2">
-              <Link
-                to="/portal/alerts"
-                className="w-full py-2 px-3 bg-rose-600 text-white rounded-xl text-xs font-semibold hover:bg-rose-700 transition-colors flex items-center justify-center gap-1.5 shadow-sm"
-              >
-                <span>Broadcast Boil Water Advisory</span>
-                <ChevronRight size={13} />
-              </Link>
-              <Link
-                to="/portal/map"
-                className="w-full py-2 px-3 bg-white text-slate-700 border border-slate-200 rounded-xl text-xs font-semibold hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5"
-              >
-                <span>Inspect Population Plumes on Map</span>
-                <ExternalLink size={13} />
-              </Link>
-            </div>
-          </div>
-
-          <div className="bg-white p-5 rounded-3xl border border-slate-200/90 shadow-xs space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
-              Surveillance Highlights
-            </h4>
-            <div className="space-y-2.5 text-xs">
-              <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                <span className="text-slate-600">Pending / Untested Sources:</span>
-                <span className="font-bold text-slate-800">{stats.untested}</span>
-              </div>
-              <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                <span className="text-slate-600">Highest Populated Affected:</span>
-                <span className="font-bold text-indigo-700">Tagnipa (3,266)</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-600">Highest Failure Concentration:</span>
-                <span className="font-bold text-rose-600">Malapoc Norte (87.5%)</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Row 3: Critical Stations Requiring Intervention Table */}
+      {/* Row 2: Priority Surveillance Ranking */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200/90 shadow-xs">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+        <div className="flex items-center justify-between mb-4">
           <div>
-            <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
-              <XCircle size={16} className="text-rose-600" />
-              <span>Contaminated Water Sources Requiring Remediation</span>
-            </h3>
+            <h3 className="text-base font-bold text-slate-900">Barangay Surveillance Ranking</h3>
             <p className="text-xs text-slate-500 mt-0.5">
-              Water sources where bacteriological exam failed or E. coli was detected by the sanitation inspector
+              Prioritized by contaminated source count and barangay population exposure
             </p>
           </div>
-
-          {/* Quick Search */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search station or barangay..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 w-56 placeholder-slate-400"
-            />
-          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 border border-slate-200">
+            {barangayAnalytics.length} Barangays Monitored
+          </span>
         </div>
 
-        {criticalStations.length === 0 ? (
-          <div className="text-center py-8 text-xs text-slate-400">
-            No contaminated stations found matching the current filter.
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                  <th className="pb-3 font-semibold">Station Name</th>
-                  <th className="pb-3 font-semibold">Barangay</th>
-                  <th className="pb-3 font-semibold">Status</th>
-                  <th className="pb-3 font-semibold">Lab Exam</th>
-                  <th className="pb-3 font-semibold">Barangay Population</th>
-                  <th className="pb-3 font-semibold">Plume Exposure</th>
-                  <th className="pb-3 font-semibold">Actions</th>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs">
+            <thead>
+              <tr className="border-b border-slate-100 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                <th className="pb-3 font-semibold">Rank & Barangay</th>
+                <th className="pb-3 font-semibold">Total Water Points</th>
+                <th className="pb-3 font-semibold">Contaminated</th>
+                <th className="pb-3 font-semibold">Contamination Rate</th>
+                <th className="pb-3 font-semibold">Population</th>
+                <th className="pb-3 font-semibold">Urgency</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {barangayAnalytics.map((item, index) => (
+                <tr key={item.name} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="py-3.5 font-bold text-slate-800 flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-slate-100 text-slate-600 text-[10px] flex items-center justify-center font-mono">
+                      {index + 1}
+                    </span>
+                    <span>Barangay {item.name}</span>
+                  </td>
+                  <td className="py-3.5 text-slate-600">{item.total} stations</td>
+                  <td className="py-3.5 font-bold text-rose-600">{item.contaminated} sources</td>
+                  <td className="py-3.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-24 bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            item.failRate >= 60 ? "bg-rose-500" : item.failRate >= 30 ? "bg-amber-500" : "bg-emerald-500"
+                          }`}
+                          style={{ width: `${item.failRate}%` }}
+                        />
+                      </div>
+                      <span className="font-semibold text-slate-700">{item.failRate}%</span>
+                    </div>
+                  </td>
+                  <td className="py-3.5 font-mono text-slate-700">{item.population.toLocaleString()}</td>
+                  <td className="py-3.5">
+                    <span
+                      className={`px-2 py-0.5 rounded-full font-bold text-[10px] uppercase ${
+                        item.urgency === "Critical"
+                          ? "bg-rose-100 text-rose-800 border border-rose-200"
+                          : item.urgency === "Elevated"
+                          ? "bg-amber-100 text-amber-800 border border-amber-200"
+                          : "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                      }`}
+                    >
+                      {item.urgency}
+                    </span>
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {criticalStations.map((station) => {
-                  const bgyPop = getBarangayPopulation(station.barangay);
-                  const popFactor = Math.min(1.0, Math.max(0.04, bgyPop / 5854));
-                  const plumeMeters = Math.round(150 + 250 * popFactor);
-
-                  return (
-                    <tr key={station.id} className="hover:bg-slate-50/70 transition-colors">
-                      <td className="py-3 font-semibold text-slate-900">
-                        {station.full_name || station.name}
-                      </td>
-                      <td className="py-3 text-slate-600">{station.barangay}</td>
-                      <td className="py-3">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-rose-100 text-rose-800 border border-rose-200">
-                          Contaminated
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        <span className="text-rose-600 font-semibold font-mono">Failed</span>
-                      </td>
-                      <td className="py-3 font-mono text-slate-700">{bgyPop.toLocaleString()} residents</td>
-                      <td className="py-3">
-                        <span className="px-2 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-100 font-mono text-[11px]">
-                          ~{plumeMeters}m radius
-                        </span>
-                      </td>
-                      <td className="py-3">
-                        <Link
-                          to="/portal/map"
-                          className="text-blue-600 hover:text-blue-800 font-semibold text-xs flex items-center gap-1 hover:underline"
-                        >
-                          <span>Locate</span>
-                          <ChevronRight size={12} />
-                        </Link>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* Barangay Population Directory Modal */}
+      {isPopModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex items-start justify-between bg-slate-50/70">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100">
+                  <Users size={20} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    Barangay Population Directory
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Edit population counts for each barangay in Maasin City to update exposure modeling and risk calculations.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPopModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+                title="Close"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Quick Metrics & Search Header */}
+            <div className="p-4 sm:p-6 pb-3 border-b border-slate-100 bg-white space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 sm:gap-3 text-xs">
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200/70">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                    City Total Population
+                  </span>
+                  <span className="text-base font-extrabold text-slate-800 font-mono mt-0.5 block">
+                    {MAASIN_BARANGAYS.reduce(
+                      (sum, bgy) => sum + (Number(tempPopulations[bgy] ?? getBarangayPopulation(bgy, tempPopulations)) || 0),
+                      0
+                    ).toLocaleString()}
+                  </span>
+                </div>
+                <div className="p-3 rounded-2xl bg-indigo-50/80 border border-indigo-100">
+                  <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
+                    Population at Risk
+                  </span>
+                  <span className="text-base font-extrabold text-indigo-800 font-mono mt-0.5 block">
+                    {(() => {
+                      let atRisk = 0;
+                      stats.contaminatedBarangaysList.forEach((bgy) => {
+                        atRisk += Number(tempPopulations[bgy] ?? getBarangayPopulation(bgy, tempPopulations)) || 0;
+                      });
+                      return atRisk.toLocaleString();
+                    })()}
+                  </span>
+                </div>
+                <div className="col-span-2 sm:col-span-1 p-3 rounded-2xl bg-rose-50/80 border border-rose-100 flex flex-col justify-center">
+                  <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider block">
+                    Affected Catchments
+                  </span>
+                  <span className="text-base font-extrabold text-rose-800 font-mono mt-0.5 block">
+                    {stats.contaminatedBarangaysCount} Barangays
+                  </span>
+                </div>
+              </div>
+
+              {/* Search bar & count */}
+              <div className="flex items-center gap-2 pt-1">
+                <div className="relative flex-1">
+                  <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={popSearch}
+                    onChange={(e) => setPopSearch(e.target.value)}
+                    placeholder="Search by barangay name..."
+                    className="w-full pl-9 pr-8 py-2 rounded-xl text-xs border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-slate-50/60"
+                  />
+                  {popSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setPopSearch("")}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5"
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                <span className="text-[11px] font-medium text-slate-400 shrink-0">
+                  {filteredPopBarangays.length} of {MAASIN_BARANGAYS.length} Barangays
+                </span>
+              </div>
+            </div>
+
+            {/* List / Form */}
+            <form onSubmit={handleSavePopulations} className="flex-1 flex flex-col overflow-hidden">
+              <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-2">
+                {filteredPopBarangays.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 text-xs">
+                    No barangays match &quot;{popSearch}&quot;
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+                    {filteredPopBarangays.map((bgy) => {
+                      const isAffected = stats.contaminatedBarangaysList.includes(bgy);
+                      const currentVal = tempPopulations[bgy] ?? getBarangayPopulation(bgy);
+
+                      return (
+                        <div
+                          key={bgy}
+                          className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                            isAffected
+                              ? "bg-rose-50/30 border-rose-200/80 hover:border-rose-300"
+                              : "bg-white border-slate-200/80 hover:border-slate-300"
+                          }`}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-bold text-xs text-slate-800 truncate">
+                                {bgy}
+                              </span>
+                              {isAffected && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200">
+                                  At Risk
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <label className="sr-only" htmlFor={`pop-${bgy}`}>
+                              Population for {bgy}
+                            </label>
+                            <input
+                              id={`pop-${bgy}`}
+                              type="number"
+                              min="0"
+                              max="100000"
+                              value={currentVal}
+                              onChange={(e) => handlePopChange(bgy, e.target.value)}
+                              className="w-24 px-2.5 py-1.5 text-xs font-mono font-bold text-right rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white shadow-xs"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 sm:p-5 border-t border-slate-100 bg-slate-50 flex items-center justify-end gap-3 shrink-0">
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsPopModalOpen(false)}
+                    className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200/60 rounded-xl transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Save size={14} />
+                    <span>Save Changes</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

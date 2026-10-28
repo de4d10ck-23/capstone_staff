@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from "react";
+import ErrorNotice from "./ErrorNotice";
 import { 
   MapPin, 
   Calendar, 
@@ -20,23 +21,20 @@ const extractImage = (r) => {
   if (r.image_url) return r.image_url;
   if (r.photo_url) return r.photo_url;
   if (r.description) {
-    const match = r.description.match(/\[(?:Attached )?Photo Proof:\s*(https?:\/\/[^\s\]]+)\]/i)
+    const match = r.description.match(/\[(?:Attached )?Photo Proof:\s*([^\]]+)\]/i)
       || r.description.match(/(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|webp|gif))/i);
-    if (match) return match[1];
+    if (match) return match[1].trim();
   }
   return null;
 };
 
 const getDisplayDescription = (r) => {
   if (!r) return "";
-  if (r.clean_description) return r.clean_description;
-  if (r.description) {
-    return r.description
-      .replace(/\[(?:Attached )?Photo Proof:\s*https?:\/\/[^\s\]]+\]/gi, "")
-      .replace(/\[Inspected Source:[^\]]+\]\s*/gi, "")
-      .trim();
-  }
-  return "";
+  const raw = r.clean_description || r.description || "";
+  return raw
+    .replace(/\[(?:Attached )?Photo Proof:[^\]]*\]/gi, "")
+    .replace(/\[Inspected Source:[^\]]*\]\s*/gi, "")
+    .trim();
 };
 
 const ReportDetailModal = ({ 
@@ -45,6 +43,7 @@ const ReportDetailModal = ({
   onUpdateStatus, 
   onOpenRejectModal,
   actionLoading,
+  error,
   isStaff = true 
 }) => {
   const mapContainer = useRef(null);
@@ -64,7 +63,7 @@ const ReportDetailModal = ({
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
+      style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [lng, lat],
       zoom: hasCoords ? 15 : 12,
     });
@@ -112,6 +111,7 @@ const ReportDetailModal = ({
 
   const isPending = !report.status || report.status === "pending";
   const isValidated = report.status === "validated";
+  const isProcessing = ["in_progress", "processing", "assigned"].includes(report.status);
   const isEscalated = report.status === "escalated" || report.status === "passed_to_chu";
   const isDone = report.status === "done" || report.status === "resolved" || report.status === "completed";
   const isDismissed = report.status === "dismissed" || report.status === "rejected";
@@ -120,6 +120,7 @@ const ReportDetailModal = ({
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
       <div className="bg-white rounded-3xl max-w-3xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative space-y-6 max-h-[92vh] overflow-y-auto font-sans">
+        <ErrorNotice error={error} />
         {/* Header */}
         <div className="flex justify-between items-start pb-4 border-b border-slate-100">
           <div className="space-y-1">
@@ -140,7 +141,7 @@ const ReportDetailModal = ({
                   ? "bg-rose-100 text-rose-800 border border-rose-200"
                   : "bg-slate-100 text-slate-700 border border-slate-200"
               }`}>
-                {isEscalated
+                {isProcessing ? "Processing" : isEscalated
                   ? "Passed to CHU"
                   : isValidated
                   ? "Validated"
@@ -198,7 +199,7 @@ const ReportDetailModal = ({
               </label>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-[11px] font-mono text-blue-700 font-semibold bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200">
                 Lat: {lat.toFixed(6)}, Lng: {lng.toFixed(6)}
               </span>
@@ -319,7 +320,7 @@ const ReportDetailModal = ({
                 </>
               )}
 
-              {/* If Validated: Pass to CHU Button & Done Button */}
+              {/* Validated reports can be passed to CHU, completed, or dismissed. */}
               {isValidated && (
                 <>
                   <button
@@ -339,6 +340,21 @@ const ReportDetailModal = ({
                   >
                     <CheckCircle2 size={14} />
                     <span>Done</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (onOpenRejectModal) {
+                        onOpenRejectModal(report.id);
+                      } else {
+                        onUpdateStatus(report.id, "dismissed");
+                      }
+                    }}
+                    disabled={isBusy}
+                    className="px-4 py-2.5 rounded-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-semibold text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <X size={14} />
+                    <span>Dismiss</span>
                   </button>
                 </>
               )}

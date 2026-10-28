@@ -153,11 +153,48 @@ export const MAASIN_BARANGAY_POPULATION = {
 
 export const MAX_BARANGAY_POPULATION = 5854;
 
-export const getBarangayPopulation = (barangayName) => {
+export const getStoredBarangayPopulations = () => {
+  if (typeof window === "undefined") return { ...MAASIN_BARANGAY_POPULATION };
+  try {
+    const raw = localStorage.getItem("maasin_custom_populations");
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return { ...MAASIN_BARANGAY_POPULATION, ...parsed };
+      }
+    }
+  } catch (e) {
+    console.error("Failed to parse custom populations from localStorage", e);
+  }
+  return { ...MAASIN_BARANGAY_POPULATION };
+};
+
+export const saveBarangayPopulations = (updatedMap) => {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem("maasin_custom_populations", JSON.stringify(updatedMap));
+    window.dispatchEvent(new Event("maasin-populations-updated"));
+  } catch (e) {
+    console.error("Failed to save custom populations to localStorage", e);
+  }
+};
+
+export const resetBarangayPopulations = () => {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem("maasin_custom_populations");
+    window.dispatchEvent(new Event("maasin-populations-updated"));
+  } catch (e) {
+    console.error("Failed to reset custom populations", e);
+  }
+};
+
+export const getBarangayPopulation = (barangayName, customMap = null) => {
   if (!barangayName) return 1000;
+  const popSource = customMap || getStoredBarangayPopulations();
   const clean = String(barangayName).trim().toLowerCase();
-  for (const [name, pop] of Object.entries(MAASIN_BARANGAY_POPULATION)) {
-    if (name.toLowerCase() === clean) return pop;
+  for (const [name, pop] of Object.entries(popSource)) {
+    if (name.toLowerCase() === clean) return Number(pop) || 0;
   }
   const stripped = clean
     .replace(/\(.*?\)/g, "")
@@ -169,14 +206,15 @@ export const getBarangayPopulation = (barangayName) => {
     .trim()
     .replace(/\s+/g, " ");
 
-  for (const [name, pop] of Object.entries(MAASIN_BARANGAY_POPULATION)) {
+  for (const [name, pop] of Object.entries(popSource)) {
     const nClean = name.toLowerCase().replace(/ñ/g, "n");
     if (nClean === stripped || nClean.includes(stripped) || stripped.includes(nClean)) {
-      return pop;
+      return Number(pop) || 0;
     }
   }
   return 1000;
 };
 
 export default MAASIN_BARANGAYS;
+
 

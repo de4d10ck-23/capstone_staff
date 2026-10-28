@@ -14,7 +14,6 @@ import InspectionRequests from './pages/InspectionRequests';
 // Inspector Pages
 import WaterSources from './pages/WaterSources';
 import GenerateReports from './pages/inspector/GenerateReports';
-import EndorsedReports from './pages/inspector/EndorsedReports';
 
 // CHO Pages
 import ViewReports from './pages/cho/ViewReports';
@@ -49,7 +48,7 @@ function App() {
             {/* Shared Staff Routes */}
             <Route path="dashboard" element={<Dashboard />} />
             <Route path="map" element={
-              <RoleRoute allowedRoles={['sanitization_inspector', 'barangay_official', 'admin']}>
+              <RoleRoute allowedRoles={['sanitization_inspector', 'barangay_official', 'city_health_officer', 'admin']}>
                 <WaterMap />
               </RoleRoute>
             } />
@@ -71,7 +70,7 @@ function App() {
             
             {/* Inspector Specific */}
             <Route path="endorsed-reports" element={
-              <RoleRoute allowedRoles={['sanitization_inspector']}><EndorsedReports /></RoleRoute>
+              <Navigate to="/inspections" replace />
             } />
             <Route path="water-sources" element={
               <RoleRoute allowedRoles={['sanitization_inspector', 'barangay_official', 'admin']}><WaterSources /></RoleRoute>

@@ -40,7 +40,10 @@ const BarangayOverview = () => {
   const safeCount = sources.filter((s) => s.status?.toLowerCase() === "safe").length;
   const warningCount = sources.filter((s) => s.status?.toLowerCase() === "warning").length;
   const dangerCount = sources.filter((s) => s.status?.toLowerCase() === "undrinkable" || s.status?.toLowerCase() === "contaminated").length;
-  const pendingConcerns = concerns.filter((c) => c.status === "pending");
+  const openConcernCount = concerns.filter((concern) => {
+    const status = String(concern.status || "pending").toLowerCase();
+    return status === "pending" || status === "validated";
+  }).length;
 
   return (
     <div className="space-y-8 animate-fade-in font-sans">
@@ -59,7 +62,7 @@ const BarangayOverview = () => {
             className="px-5 py-2.5 rounded-full bg-white text-blue-900 font-semibold text-xs transition-all shadow hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-1.5"
           >
             <FileCheck size={16} />
-            <span>Validate Reports ({pendingConcerns.length})</span>
+            <span>Validate Reports</span>
           </Link>
           <Link
             to="/escalate-concern"
@@ -104,7 +107,7 @@ const BarangayOverview = () => {
         <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
           <div>
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Citizen Concerns</p>
-            <h3 className="text-3xl font-bold text-blue-600 mt-1">{concerns.length}</h3>
+            <h3 className="text-3xl font-bold text-blue-600 mt-1">{openConcernCount}</h3>
           </div>
           <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
             <FileCheck size={24} />

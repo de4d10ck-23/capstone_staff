@@ -1,3 +1,4 @@
+import useReportRefresh from "../../hooks/useReportRefresh";
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { 
@@ -13,6 +14,7 @@ import {
   History
 } from "lucide-react";
 import ReportDetailModal from "../../components/ReportDetailModal";
+import ErrorNotice from "../../components/ErrorNotice";
 
 const extractPhotoProof = (r) => {
   if (!r) return null;
@@ -50,32 +52,34 @@ const ValidateReports = () => {
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const fetchReports = async () => {
+  const fetchReports = async (showLoading = false) => {
     try {
-      setLoading(true);
+      if (showLoading === true) setLoading(true);
       const res = await fetch(`${API_URL}/resident-reports`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(typeof data.detail === "string" ? data.detail : "Could not load the report queue.");
       if (data.success && Array.isArray(data.data)) {
         // Exclude unregistered_source since new water sources are now reviewed directly in the Water Sources Registry
         const waterConcernsOnly = data.data.filter(
           (r) => r.type !== "unregistered_source" && r.category !== "unregistered_source"
         );
         setReports(waterConcernsOnly);
+        setDetailReport((current) => current ? waterConcernsOnly.find((r) => r.id === current.id) || null : null);
       }
     } catch (err) {
       console.error("Error fetching resident reports:", err);
+      setErrorMsg(err.message || "Could not load the report queue.");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchReports();
-  }, [user, token, API_URL]);
+  useReportRefresh(fetchReports, API_URL, token);
 
   const handleUpdateStatus = async (reportId, newStatus, passToInspector = false, reason = "") => {
+    if (actionLoading) return false;
     setSuccessMsg("");
     setErrorMsg("");
     setActionLoading(reportId);
@@ -117,7 +121,8 @@ const ValidateReports = () => {
           });
         }
         
-        fetchReports();
+        await fetchReports();
+        return true;
       } else {
         setErrorMsg(data.detail || "Failed to update report status.");
       }
@@ -127,6 +132,7 @@ const ValidateReports = () => {
     } finally {
       setActionLoading(null);
     }
+    return false;
   };
 
   const pendingCount = reports.filter((r) => !r.status || r.status === "pending").length;
@@ -134,9 +140,11 @@ const ValidateReports = () => {
   const doneCount = reports.filter((r) => r.status === "done" || r.status === "resolved" || r.status === "completed").length;
   const dismissedCount = reports.filter((r) => r.status === "dismissed" || r.status === "rejected").length;
   const doneHistoryTotal = doneCount + dismissedCount;
+  const processingCount = reports.filter((r) => ["assigned", "processing", "in_progress"].includes(r.status)).length;
   const escalatedCount = reports.filter((r) => r.status === "escalated" || r.status === "passed_to_chu").length;
 
   const filteredReports = reports.filter((r) => {
+    if (statusFilter === "processing") return ["assigned", "processing", "in_progress"].includes(r.status);
     if (statusFilter === "all") return true;
     if (statusFilter === "pending") return !r.status || r.status === "pending";
     if (statusFilter === "validated") return r.status === "validated";
@@ -182,12 +190,7 @@ const ValidateReports = () => {
         </div>
       )}
 
-      {errorMsg && (
-        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2 shadow-sm animate-fade-in">
-          <AlertCircle size={18} className="text-red-600 flex-shrink-0" />
-          <span>{errorMsg}</span>
-        </div>
-      )}
+      {!detailReport && !dismissModal.open && <ErrorNotice error={errorMsg} />}
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -232,6 +235,10 @@ const ValidateReports = () => {
             <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
               statusFilter === "escalated" ? "bg-purple-900/40 text-white" : "bg-purple-100 text-purple-800"
             }`}>{escalatedCount}</span>
+          </button>
+          <button onClick={() => setStatusFilter("processing")}
+            className={`px-4 py-2 rounded-xl border text-xs font-semibold ${statusFilter === "processing" ? "bg-cyan-700 text-white" : "bg-white text-cyan-800 border-cyan-200"}`}>
+            Processing <span className="ml-1">{processingCount}</span>
           </button>
 
           <button
@@ -343,7 +350,8 @@ const ValidateReports = () => {
                   const isValidated = r.status === "validated";
                   const isDone = r.status === "done" || r.status === "resolved" || r.status === "completed";
                   const isDismissed = r.status === "dismissed" || r.status === "rejected";
-                  const isEscalated = r.status === "escalated" || r.status === "passed_to_chu";
+                  const isProcessing = ["in_progress", "processing", "assigned"].includes(r.status);
+  const isEscalated = r.status === "escalated" || r.status === "passed_to_chu";
                   const displayDesc = cleanDesc(r) || r.description;
                   const isBusy = actionLoading === r.id;
 
@@ -387,7 +395,7 @@ const ValidateReports = () => {
                             ? "bg-purple-100 text-purple-800 border border-purple-200"
                             : "bg-slate-100 text-slate-700 border border-slate-200"
                         }`}>
-                          {isEscalated ? "Passed to CHU" : isValidated ? "Validated" : isDone ? "Done" : isDismissed ? "Dismissed" : "Pending Review"}
+                          {isProcessing ? "Processing" : isEscalated ? "Passed to CHU" : isValidated ? "Validated" : isDone ? "Done" : isDismissed ? "Dismissed" : "Pending Review"}
                         </span>
                       </td>
 
@@ -419,6 +427,7 @@ const ValidateReports = () => {
           onUpdateStatus={handleUpdateStatus}
           onOpenRejectModal={(id) => setDismissModal({ open: true, reportId: id, reason: "" })}
           actionLoading={actionLoading}
+          error={dismissModal.open ? null : errorMsg}
           isStaff={true}
         />
       )}
@@ -428,6 +437,7 @@ const ValidateReports = () => {
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4 animate-fade-in">
             <h3 className="font-bold text-base text-slate-900">Dismiss Citizen Report</h3>
+            <ErrorNotice error={errorMsg} />
             <p className="text-xs text-slate-500">
               Provide an optional note or reason for dismissing this concern. The report will be moved to Done History with a Dismissed status.
             </p>
@@ -442,15 +452,17 @@ const ValidateReports = () => {
               <button
                 type="button"
                 onClick={() => setDismissModal({ open: false, reportId: null, reason: "" })}
+                disabled={Boolean(actionLoading)}
                 className="w-1/2 py-2.5 rounded-full border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  handleUpdateStatus(dismissModal.reportId, "dismissed", false, dismissModal.reason);
-                  setDismissModal({ open: false, reportId: null, reason: "" });
+                disabled={Boolean(actionLoading)}
+                onClick={async () => {
+                  const saved = await handleUpdateStatus(dismissModal.reportId, "dismissed", false, dismissModal.reason);
+                  if (saved) setDismissModal({ open: false, reportId: null, reason: "" });
                 }}
                 className="w-1/2 py-2.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white font-semibold text-xs shadow-md cursor-pointer"
               >

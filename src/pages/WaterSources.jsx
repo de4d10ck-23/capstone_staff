@@ -1,11 +1,15 @@
+import { historyDate, manilaDate, indexHistory, snapshotForDay, historyFormValues } from "../utils/waterStatusHistory";
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import ErrorNotice from "../components/ErrorNotice";
 import { 
   Droplets, 
   Plus, 
   Search, 
   Edit2, 
   Trash2, 
+  ArchiveRestore,
   MapPin, 
   CheckCircle, 
   AlertCircle, 
@@ -76,9 +80,9 @@ const extractPhotoProof = (r) => {
   if (r.image_url) return r.image_url;
   if (r.photo_url) return r.photo_url;
   if (r.description) {
-    const match = r.description.match(/\[(?:Attached )?Photo Proof:\s*(https?:\/\/[^\s\]]+)\]/i)
+    const match = r.description.match(/\[(?:Attached )?Photo Proof:\s*([^\]]+)\]/i)
       || r.description.match(/(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|webp|gif))/i);
-    if (match) return match[1];
+    if (match) return match[1].trim();
   }
   return null;
 };
@@ -108,25 +112,7 @@ const getSubmissionStatus = (r) => {
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_KEY || "pk.eyJ1Ijoiamx0dCIsImEiOiJjbW9pNHBpZTgwMHB3MnFxMHNxcnY0MXBiIn0.__mzgeQcXuEDVkV6q8QNfQ";
 
 // Helper to extract clean YYYY-MM-DD from log without UTC conversion shifts
-const extractLogDateStr = (log) => {
-  if (!log) return "";
-  if (log.sample_date) return log.sample_date;
-  if (typeof log.recorded_at === "string") {
-    if (log.recorded_at.includes("T")) {
-      return log.recorded_at.split("T")[0];
-    }
-    const match = log.recorded_at.match(/^\d{4}-\d{2}-\d{2}/);
-    if (match) return match[0];
-  }
-  const d = new Date(log.recorded_at);
-  if (!isNaN(d.getTime())) {
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, "0");
-    const dd = String(d.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  }
-  return "";
-};
+const extractLogDateStr = historyDate;
 
 const formatDisplayDate = (dateStr) => {
   if (!dateStr) return "";
@@ -155,25 +141,8 @@ const WaterStatusHeatmap = ({
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [hoveredDay, setHoveredDay] = useState(null);
 
-  // Group history records by date 'YYYY-MM-DD'
-  const historyByDate = useMemo(() => {
-    const map = {};
-    if (Array.isArray(history)) {
-      history.forEach((log) => {
-        const dateStr = extractLogDateStr(log);
-        if (!dateStr) return;
-
-        const existing = map[dateStr];
-        if (!existing) {
-          map[dateStr] = log;
-        } else {
-          // If multiple logs on the same date, take the latest log
-          map[dateStr] = log;
-        }
-      });
-    }
-    return map;
-  }, [history]);
+  const historyIndex = useMemo(() => indexHistory(history), [history]);
+  const historyByDate = historyIndex.changes;
 
   // Collect available years from history + default range
   const availableYears = useMemo(() => {
@@ -192,15 +161,14 @@ const WaterStatusHeatmap = ({
 
   // Count audits in selected year (only evaluated checks: safe, warning, contaminated)
   const yearAuditsCount = useMemo(() => {
-    if (!Array.isArray(history)) return 0;
-    return history.filter((log) => {
+    return Object.values(historyByDate).filter((log) => {
       const dStr = extractLogDateStr(log);
       if (!dStr) return false;
       const yr = parseInt(dStr.split("-")[0], 10);
       const st = (log.status || "").toLowerCase();
       return yr === selectedYear && st !== "unknown" && st !== "pending" && st !== "";
     }).length;
-  }, [history, selectedYear]);
+  }, [historyByDate, selectedYear]);
 
   // Generate full January-December weeks for selectedYear
   const { weeks, monthLabels } = useMemo(() => {
@@ -233,6 +201,7 @@ const WaterStatusHeatmap = ({
           dateStr,
           isCurrentYear,
           log,
+          snapshot: isCurrentYear ? snapshotForDay(historyIndex, dateStr) : null,
           dayOfWeek: d,
         });
         curr.setDate(curr.getDate() + 1);
@@ -255,7 +224,7 @@ const WaterStatusHeatmap = ({
     }
 
     return { weeks: weeksArr, monthLabels: months };
-  }, [selectedYear, historyByDate]);
+  }, [selectedYear, historyByDate, historyIndex]);
 
   const getCellColor = (day) => {
     if (!day.log) {
@@ -271,7 +240,7 @@ const WaterStatusHeatmap = ({
     }
 
     // Contaminated / failed check is red
-    if (status === "contaminated" || status === "undrinkable" || exam === "failed") {
+    if (status === "contaminated" || status === "undrinkable" || (!status && exam === "failed")) {
       return "bg-red-500 hover:bg-red-600 border border-red-600 shadow-xs shadow-red-500/20 cursor-pointer";
     }
     // Warning level is amber
@@ -364,9 +333,13 @@ const WaterStatusHeatmap = ({
               {weeks.map((week, wIdx) => (
                 <div key={wIdx} className="flex flex-col gap-[2px]">
                   {week.map((day, dIdx) => (
-                    <div
+                    <button
+                      type="button"
                       key={dIdx}
-                      onClick={() => day.log && onSelectLog && onSelectLog(day.log, day.dateStr)}
+                      disabled={!day.isCurrentYear || day.dateStr > manilaDate() || loading}
+                      aria-label={`${day.dateStr}: ${day.log?.status || "No changes"}`}
+                      aria-pressed={selectedDate === day.dateStr}
+                      onClick={() => onSelectLog?.(day.snapshot, day.dateStr)}
                       onMouseEnter={() => setHoveredDay(day)}
                       onMouseLeave={() => setHoveredDay(null)}
                       className={`w-[11px] h-[11px] rounded-[2px] transition-all ${getCellColor(day)} ${
@@ -451,7 +424,7 @@ const WaterStatusHeatmap = ({
         </div>
       ) : (
         <div className="flex flex-wrap items-center justify-between text-[11px] text-slate-600 px-1 pt-1 gap-2">
-          <span>Hover over any day square to inspect test & status records.</span>
+          <span>Click a day to load its saved details. Gray days carry forward the last change.</span>
           <div className="flex items-center gap-2 font-medium">
             <span className="text-[10px] text-slate-600">No Changes</span>
             <div className="w-[11px] h-[11px] rounded-[2px] bg-slate-200 border border-slate-300" />
@@ -469,20 +442,30 @@ const WaterStatusHeatmap = ({
 };
 
 const WaterSources = () => {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { token, API_URL, user } = useAuth();
   const isBrgyOfficial = user?.role === "barangay_official";
   const isInspector = user?.role === "sanitization_inspector";
   const userBarangay = user?.barangay || "Combado";
 
   const [sources, setSources] = useState([]);
+  const [archivedSources, setArchivedSources] = useState([]);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState("");
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBarangay, setSelectedBarangay] = useState("all");
   const [selectedStatus, setSelectedStatus] = useState("all");
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
   const [editingSource, setEditingSource] = useState(null);
   const [statusHistory, setStatusHistory] = useState([]);
+  const [selectedHistoryDate, setSelectedHistoryDate] = useState(manilaDate);
+  const [historyError, setHistoryError] = useState("");
+  const historyRequestRef = useRef(0);
   const [historyLoading, setHistoryLoading] = useState(false);
 
   // Resident Submissions State
@@ -490,9 +473,20 @@ const WaterSources = () => {
   const [submissionsLoading, setSubmissionsLoading] = useState(false);
   const [isSubmissionsModalOpen, setIsSubmissionsModalOpen] = useState(false);
   const [submissionsTab, setSubmissionsTab] = useState("pending"); // "pending" | "registered" | "dismissed" | "all"
+  useEffect(() => {
+    if (searchParams.get("view") !== "resident-submissions") return;
+    setIsSubmissionsModalOpen(true);
+    setSubmissionsTab("all");
+    // Consume the navigation request so closing the dialog keeps it closed.
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("view");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, setSearchParams]);
+
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [associatedReport, setAssociatedReport] = useState(null);
   const [dismissDialog, setDismissDialog] = useState({ open: false, reportId: null, reportTitle: "", reason: "" });
+  const [dismissing, setDismissing] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const [photoLightbox, setPhotoLightbox] = useState({ open: false, photos: [], index: 0, title: "" });
 
@@ -520,7 +514,7 @@ const WaterSources = () => {
   const map = useRef(null);
   const marker = useRef(null);
 
-  const [mapStyle, setMapStyle] = useState("mapbox://styles/mapbox/streets-v12");
+  const [mapStyle, setMapStyle] = useState("mapbox://styles/mapbox/satellite-streets-v12");
   const [locationValidation, setLocationValidation] = useState({
     isValid: true,
     detectedArea: "",
@@ -712,46 +706,39 @@ const WaterSources = () => {
   const [successMsg, setSuccessMsg] = useState("");
 
   const fetchStatusHistory = async (locId) => {
+    const requestId = ++historyRequestRef.current;
     try {
       setHistoryLoading(true);
+      setHistoryError("");
       const res = await fetch(`${API_URL}/water-locations/${locId}/history`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
+      if (requestId !== historyRequestRef.current) return;
+      if (res.ok && data.success && Array.isArray(data.data)) {
         setStatusHistory(data.data);
+        if (data.latest) {
+          setSelectedHistoryDate(historyDate(data.latest));
+          setFormData((prev) => ({ ...prev, ...historyFormValues(data.latest) }));
+        }
       } else {
         setStatusHistory([]);
+        setHistoryError(data.detail || "Could not load status history.");
       }
     } catch (err) {
       console.error("Error fetching water status history:", err);
-      setStatusHistory([]);
+      if (requestId === historyRequestRef.current) {
+        setStatusHistory([]);
+        setHistoryError("Could not load status history. Please reopen this source to try again.");
+      }
     } finally {
-      setHistoryLoading(false);
+      if (requestId === historyRequestRef.current) setHistoryLoading(false);
     }
   };
 
   const handleSelectHistoryLog = (log, dateStr) => {
-    if (!log) return;
-    const rawStatus = (log.status || "safe").toLowerCase();
-    const normalizedStatus = rawStatus === "undrinkable" ? "contaminated" : rawStatus;
-    const isUnknown = normalizedStatus === "unknown" || log.e_coli === null || log.e_coli === undefined;
-    const eColiPresent = isUnknown
-      ? "unknown"
-      : Boolean(log.e_coli || (log.e_coli_count && Number(log.e_coli_count) > 0))
-      ? "present"
-      : "not_present";
-    setFormData((prev) => ({
-      ...prev,
-      status: normalizedStatus,
-      e_coli_present: eColiPresent,
-      e_coli_count: eColiPresent === "present" ? (log.e_coli_count || 1) : 0,
-      coliform_count: log.coliform_count || 0,
-      bacteriological_exam: log.bacteriological_exam || (normalizedStatus === "safe" ? "passed" : (normalizedStatus === "unknown" ? "untested" : "failed")),
-      sample_date: log.sample_date || dateStr,
-      sample_time: log.sample_time || "12:00:00",
-      description: log.notes || prev.description,
-    }));
+    setSelectedHistoryDate(dateStr);
+    setFormData((prev) => ({ ...prev, ...historyFormValues(log) }));
   };
 
   const fetchSources = async () => {
@@ -760,6 +747,7 @@ const WaterSources = () => {
       const headers = token ? { Authorization: `Bearer ${token}` } : {};
       const res = await fetch(`${API_URL}/water-locations`, { headers });
       const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(typeof data.detail === "string" ? data.detail : "Could not load water sources. Please retry.");
       if (data.success && Array.isArray(data.data)) {
         if (isBrgyOfficial && userBarangay) {
           setSources(data.data.filter((s) => s.barangay?.toLowerCase() === userBarangay.toLowerCase()));
@@ -769,8 +757,25 @@ const WaterSources = () => {
       }
     } catch (err) {
       console.error("Error fetching water sources:", err);
+      setErrorMsg(err.message || "Could not load water sources.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchArchive = async () => {
+    setArchiveLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/water-locations/archive`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || "Could not load archived stations.");
+      setArchivedSources(data.data || []);
+    } catch (err) {
+      setErrorMsg(err.message || "Could not load archived stations.");
+    } finally {
+      setArchiveLoading(false);
     }
   };
 
@@ -803,6 +808,9 @@ const WaterSources = () => {
   }, [API_URL, token]);
 
   const handleOpenModal = (sourceToEdit = null, prefillReport = null) => {
+    historyRequestRef.current += 1;
+    setHistoryError("");
+    setHistoryLoading(false);
     setErrorMsg("");
     setSuccessMsg("");
     if (sourceToEdit) {
@@ -815,6 +823,8 @@ const WaterSources = () => {
         ? "present"
         : "not_present";
       setEditingSource(sourceToEdit);
+      setSelectedHistoryDate(sourceToEdit.sample_date || manilaDate());
+      setStatusHistory([]);
       setAssociatedReport(null);
       fetchStatusHistory(sourceToEdit.id);
       const targetBrgy = isBrgyOfficial ? userBarangay : (sourceToEdit.barangay || "Combado");
@@ -823,14 +833,14 @@ const WaterSources = () => {
 
       setFormData({
         name: sourceToEdit.name || sourceToEdit.full_name || "",
-        source_type: sourceToEdit.source_type || "deep_well",
+        source_type: sourceToEdit.source_type || "unknown",
         barangay: targetBrgy,
         latitude: lat,
         longitude: lng,
         status: normalizedStatus,
         e_coli_present: eColiPresent,
         e_coli_count: eColiPresent === "present" ? 1 : 0,
-        coliform_count: eColiPresent === "present" ? 1 : 0,
+        coliform_count: sourceToEdit.coliform_count ?? (sourceToEdit.coliform_bacteria ? 1 : 0),
         bacteriological_exam: sourceToEdit.bacteriological_exam || (eColiPresent === "present" ? "failed" : (normalizedStatus === "safe" ? "passed" : (normalizedStatus === "unknown" ? "untested" : "failed"))),
         sample_date: sourceToEdit.sample_date || "",
         sample_time: sourceToEdit.sample_time || "",
@@ -968,8 +978,23 @@ const WaterSources = () => {
     handleOpenModal(null, report);
   };
 
+  useEffect(() => {
+    const reportId = searchParams.get("report");
+    if (!reportId) return;
+    const report = residentSubmissions.find((item) => String(item.id) === reportId);
+    if (!report) return;
+    if (!["done", "completed", "resolved", "dismissed", "rejected"].includes(report.status)) {
+      handleReviewAndRegister(report);
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("report");
+    setSearchParams(nextParams, { replace: true });
+  }, [searchParams, residentSubmissions]);
+
   const handleDismissSubmission = async () => {
-    if (!dismissDialog.reportId) return;
+    if (!dismissDialog.reportId || dismissing) return;
+    setDismissing(true);
+    setErrorMsg("");
     try {
       const res = await fetch(`${API_URL}/resident-reports/${dismissDialog.reportId}`, {
         method: "PUT",
@@ -993,6 +1018,8 @@ const WaterSources = () => {
     } catch (err) {
       console.error("Error dismissing submission:", err);
       setErrorMsg("Network error dismissing submission.");
+    } finally {
+      setDismissing(false);
     }
   };
 
@@ -1199,8 +1226,14 @@ const WaterSources = () => {
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (savingRef.current || uploadingPhoto) return;
     setErrorMsg("");
     setSuccessMsg("");
+
+    if (editingSource && (historyLoading || historyError)) {
+      setErrorMsg(historyError || "Wait for status history to finish loading.");
+      return;
+    }
 
     if (!locationValidation.isValid) {
       setErrorMsg(
@@ -1209,6 +1242,8 @@ const WaterSources = () => {
       return;
     }
 
+    savingRef.current = true;
+    setSaving(true);
     try {
       const url = editingSource
         ? `${API_URL}/water-locations/${editingSource.id}`
@@ -1219,7 +1254,7 @@ const WaterSources = () => {
       const isEColiUnknown = formData.e_coli_present === "unknown" || formData.e_coli_present === null;
       const isContaminated = formData.status === "contaminated" || formData.status === "undrinkable";
       const isSafe = formData.status === "safe";
-      const isUnknown = formData.status === "unknown" || isEColiUnknown;
+      const isUnknown = formData.status === "unknown";
 
       const finalImageUrl = (formData.photos && formData.photos.length > 0)
         ? (formData.photos.length === 1 ? formData.photos[0] : JSON.stringify(formData.photos))
@@ -1229,20 +1264,26 @@ const WaterSources = () => {
         name: formData.name.trim(),
         full_name: formData.name.trim(),
         source_type: formData.source_type,
+        ...(editingSource ? { history_date: selectedHistoryDate } : {}),
         barangay: isBrgyOfficial ? userBarangay : formData.barangay,
         latitude: parseFloat(formData.latitude),
         longitude: parseFloat(formData.longitude),
-        status: isContaminated ? "contaminated" : (isUnknown ? "unknown" : (isSafe ? "safe" : "warning")),
-        e_coli: (isUnknown || isEColiUnknown) ? null : isPresent,
-        coliform_bacteria: (isUnknown || isEColiUnknown) ? null : isPresent,
-        e_coli_count: (isUnknown || isEColiUnknown) ? 0 : (isPresent ? 1 : 0),
-        coliform_count: (isUnknown || isEColiUnknown) ? 0 : (isPresent ? 1 : 0),
-        bacteriological_exam: (isUnknown || isEColiUnknown)
-          ? "untested"
-          : (isPresent || isContaminated ? "failed" : "passed"),
+        ...(isBrgyOfficial ? (editingSource ? {} : {
+          status: "unknown",
+          bacteriological_exam: "untested",
+        }) : {
+          status: isContaminated ? "contaminated" : (isUnknown ? "unknown" : (isSafe ? "safe" : "warning")),
+          e_coli: (isUnknown || isEColiUnknown) ? null : isPresent,
+          coliform_bacteria: isUnknown ? null : Number(formData.coliform_count || 0) > 0,
+          e_coli_count: (isUnknown || isEColiUnknown) ? 0 : (isPresent ? 1 : 0),
+          coliform_count: isUnknown ? 0 : Number(formData.coliform_count || 0),
+          bacteriological_exam: isUnknown
+            ? "untested"
+            : formData.bacteriological_exam,
+          sample_date: formData.sample_date || null,
+          sample_time: formData.sample_time || null,
+        }),
         image_url: finalImageUrl,
-        sample_date: formData.sample_date || undefined,
-        sample_time: formData.sample_time || undefined,
         description: formData.description.trim(),
         notes: formData.description.trim()
       };
@@ -1261,7 +1302,7 @@ const WaterSources = () => {
       if (data.success) {
         if (associatedReport) {
           try {
-            await fetch(`${API_URL}/resident-reports/${associatedReport.id}`, {
+            const reportRes = await fetch(`${API_URL}/resident-reports/${associatedReport.id}`, {
               method: "PUT",
               headers: {
                 "Content-Type": "application/json",
@@ -1272,8 +1313,14 @@ const WaterSources = () => {
                 reason: `Verified and registered into Barangay Water Sources Registry as "${formData.name.trim()}".`
               })
             });
+            const reportData = await reportRes.json();
+            if (!reportRes.ok || !reportData.success) throw new Error(reportData.detail || "Report status update failed.");
           } catch (repErr) {
-            console.warn("Could not auto-update resident report status:", repErr);
+            // Keep the saved source ID so retrying updates it instead of inserting a duplicate.
+            setEditingSource(data.data);
+            setErrorMsg(`Water source saved, but the report is not yet Done. ${repErr.message} Save again to retry.`);
+            fetchSources();
+            return;
           }
           setAssociatedReport(null);
           fetchResidentSubmissions();
@@ -1292,11 +1339,14 @@ const WaterSources = () => {
     } catch (err) {
       console.error("Error saving water source:", err);
       setErrorMsg("Network error saving water source.");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
   const handleDelete = async (sourceId) => {
-    if (!window.confirm("Are you sure you want to permanently delete this water station?")) return;
+    if (!window.confirm("Archive this water station? You can restore it with its history later.")) return;
 
     try {
       const res = await fetch(`${API_URL}/water-locations/${sourceId}`, {
@@ -1305,13 +1355,33 @@ const WaterSources = () => {
       });
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg("Water station removed.");
+        setSuccessMsg("Water station archived. Its history is preserved.");
         fetchSources();
+        if (archiveOpen) fetchArchive();
       } else {
         setErrorMsg(data.detail || "Failed to delete station.");
       }
     } catch (err) {
       console.error("Error deleting water station:", err);
+      setErrorMsg("Could not archive the station. Check your connection and retry.");
+    }
+  };
+
+  const handleRestore = async (sourceId) => {
+    setArchiveBusy(sourceId);
+    setErrorMsg("");
+    try {
+      const res = await fetch(`${API_URL}/water-locations/${sourceId}/restore`, {
+        method: "POST", headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || "Could not restore station.");
+      setSuccessMsg("Water station restored with its original status history.");
+      await Promise.all([fetchSources(), fetchArchive()]);
+    } catch (err) {
+      setErrorMsg(err.message || "Could not restore station.");
+    } finally {
+      setArchiveBusy("");
     }
   };
 
@@ -1369,8 +1439,17 @@ const WaterSources = () => {
               : "Manage tested water stations, wells, taps, and laboratory metrics"}
           </p>
         </div>
-        {!isInspector && (
           <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              aria-pressed={archiveOpen}
+              onClick={() => { if (!archiveOpen) fetchArchive(); setArchiveOpen(!archiveOpen); }}
+              className={`inline-flex items-center gap-2 border px-4 py-2.5 rounded-full text-xs font-semibold transition-colors ${archiveOpen ? "bg-blue-900 hover:bg-blue-800 text-white border-blue-900 shadow-sm" : "bg-white hover:bg-slate-50 text-slate-800 border-slate-300"}`}
+            >
+              <ArchiveRestore size={16} className={archiveOpen ? "text-white" : "text-blue-600"} />
+              <span>Archived Stations</span>
+            </button>
+            {!isInspector && <>
             <button
               onClick={() => setIsSubmissionsModalOpen(true)}
               className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 px-4 py-2.5 rounded-full text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer relative"
@@ -1394,8 +1473,8 @@ const WaterSources = () => {
               <Plus size={16} />
               <span>Register New Station</span>
             </button>
+            </>}
           </div>
-        )}
       </div>
 
       {successMsg && (
@@ -1405,12 +1484,7 @@ const WaterSources = () => {
         </div>
       )}
 
-      {errorMsg && (
-        <div className="p-4 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2">
-          <AlertCircle size={16} className="text-red-600" />
-          <span>{errorMsg}</span>
-        </div>
-      )}
+      {!isModalOpen && !isSubmissionsModalOpen && <ErrorNotice error={errorMsg} />}
 
       {/* Filter and Search Bar */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row gap-4 justify-between items-center">
@@ -1464,6 +1538,32 @@ const WaterSources = () => {
         </div>
       </div>
 
+      {archiveOpen ? (
+        <section className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-100">
+            <h2 className="font-bold text-slate-900">Archived water sources</h2>
+            <p className="text-xs text-slate-500 mt-1">Restore a station to return its original record and status history to the registry.</p>
+          </div>
+          <div className="overflow-x-auto"><table className="w-full text-left text-xs">
+            <thead className="bg-slate-50 text-slate-500 uppercase"><tr>
+              <th className="px-6 py-3">Station</th><th className="px-6 py-3">Barangay</th>
+              <th className="px-6 py-3">Status when archived</th><th className="px-6 py-3">Archived</th>
+              <th className="px-6 py-3 text-right">Action</th>
+            </tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {archiveLoading ? <tr><td colSpan={5} className="p-8 text-center text-slate-500">Loading archive...</td></tr>
+                : archivedSources.length === 0 ? <tr><td colSpan={5} className="p-8 text-center text-slate-500">No archived stations.</td></tr>
+                : archivedSources.map((source) => <tr key={source.id}>
+                  <td className="px-6 py-4 font-semibold text-slate-900">{source.full_name || source.name}</td>
+                  <td className="px-6 py-4 text-slate-600">Brgy. {source.barangay}</td>
+                  <td className="px-6 py-4 capitalize text-slate-600">{source.status || "Unknown"}</td>
+                  <td className="px-6 py-4 text-slate-600">{source.archived_at ? new Date(source.archived_at).toLocaleString("en-PH", { timeZone: "Asia/Manila" }) : ""}<span className="block text-slate-400">{source.archived_by_name || "Staff"}</span></td>
+                  <td className="px-6 py-4 text-right"><button type="button" disabled={Boolean(archiveBusy)} onClick={() => handleRestore(source.id)} className="inline-flex items-center gap-1.5 rounded-full bg-blue-900 text-white px-3 py-2 font-semibold disabled:opacity-50"><ArchiveRestore size={14} />{archiveBusy === source.id ? "Restoring..." : "Restore"}</button></td>
+                </tr>)}
+            </tbody>
+          </table></div>
+        </section>
+      ) : <>
       {/* Sources Table */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
@@ -1593,11 +1693,13 @@ const WaterSources = () => {
         </div>
       </div>
 
+      </>}
       {/* Add / Edit Water Source Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-2xl w-full p-6 sm:p-8 shadow-2xl border border-slate-100 relative animate-fade-in max-h-[92vh] overflow-y-auto">
             <button
+              disabled={saving}
               onClick={() => setIsModalOpen(false)}
               className="absolute top-6 right-6 text-slate-400 hover:text-slate-700 cursor-pointer"
             >
@@ -1635,6 +1737,8 @@ const WaterSources = () => {
             )}
 
             <form onSubmit={handleSave} className="space-y-4">
+              <ErrorNotice error={errorMsg} />
+              <fieldset disabled={saving || uploadingPhoto} className="contents">
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Station / Source Name</label>
                 <input
@@ -1655,6 +1759,7 @@ const WaterSources = () => {
                     onChange={(e) => setFormData({ ...formData, source_type: e.target.value })}
                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
                   >
+                    <option value="unknown">Unknown / Not recorded</option>
                     <option value="deep_well">Deep Well</option>
                     <option value="spring">Natural Spring</option>
                     <option value="piped_tap">Piped Municipal Tap</option>
@@ -1766,17 +1871,6 @@ const WaterSources = () => {
                     </div>
                     <button
                       type="button"
-                      onClick={() => handleMapStyleChange("mapbox://styles/mapbox/streets-v12")}
-                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                        mapStyle === "mapbox://styles/mapbox/streets-v12"
-                          ? "bg-blue-600 text-white shadow-xs"
-                          : "text-slate-700 hover:text-slate-900 hover:bg-slate-100"
-                      }`}
-                    >
-                      Streets
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => handleMapStyleChange("mapbox://styles/mapbox/satellite-streets-v12")}
                       className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
                         mapStyle === "mapbox://styles/mapbox/satellite-streets-v12"
@@ -1785,6 +1879,17 @@ const WaterSources = () => {
                       }`}
                     >
                       Satellite
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMapStyleChange("mapbox://styles/mapbox/streets-v12")}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
+                        mapStyle === "mapbox://styles/mapbox/streets-v12"
+                          ? "bg-blue-600 text-white shadow-xs"
+                          : "text-slate-700 hover:text-slate-900 hover:bg-slate-100"
+                      }`}
+                    >
+                      Streets
                     </button>
                   </div>
 
@@ -1851,96 +1956,100 @@ const WaterSources = () => {
                 <div className="pt-2 pb-1">
                   <WaterStatusHeatmap 
                     history={statusHistory} 
-                    loading={historyLoading} 
+                    loading={historyLoading || Boolean(historyError)} 
                     currentStatus={formData.status === "undrinkable" ? "contaminated" : formData.status}
-                    selectedDate={formData.sample_date}
+                    selectedDate={selectedHistoryDate}
                     onSelectLog={handleSelectHistoryLog}
                   />
+                  {historyError && <p role="alert" className="mt-2 text-xs text-red-700">{historyError}</p>}
+                  <p className="mt-2 text-xs text-slate-600">Selected day: {formatDisplayDate(selectedHistoryDate)}. {statusHistory.some((log) => historyDate(log) === selectedHistoryDate) ? "Saved change on this day." : "No change recorded; showing the last saved details."}</p>
                 </div>
               )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Safety Status</label>
-                  <select
-                    value={formData.status === "undrinkable" ? "contaminated" : formData.status}
-                    onChange={(e) => {
-                      const newStatus = e.target.value;
-                      setFormData((prev) => ({
-                        ...prev,
-                        status: newStatus,
-                        e_coli_present: (newStatus === "contaminated" || newStatus === "undrinkable")
-                          ? "present"
-                          : newStatus === "safe"
-                          ? "not_present"
-                          : newStatus === "unknown"
-                          ? "unknown"
-                          : prev.e_coli_present
-                      }));
-                    }}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
-                  >
-                    <option value="safe">Safe</option>
-                    <option value="warning">Warning Level</option>
-                    <option value="contaminated">Contaminated</option>
-                    <option value="unknown">Unknown</option>
-                  </select>
-                </div>
+              {!isBrgyOfficial && (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Safety Status</label>
+                      <select
+                        value={formData.status === "undrinkable" ? "contaminated" : formData.status}
+                        onChange={(e) => {
+                          const newStatus = e.target.value;
+                          setFormData((prev) => ({
+                            ...prev,
+                            status: newStatus,
+                            bacteriological_exam: newStatus === "unknown" ? "untested"
+                              : newStatus === "safe" ? "passed" : newStatus === "warning" ? "untested" : "failed",
+                            e_coli_present: newStatus === "unknown" ? "unknown" : prev.e_coli_present
+                          }));
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
+                      >
+                        <option value="safe">Safe</option>
+                        <option value="warning">Warning Level</option>
+                        <option value="contaminated">Contaminated</option>
+                        <option value="unknown">Unknown</option>
+                      </select>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
-                    E. Coli Presence
-                  </label>
-                  <select
-                    value={
-                      formData.status === "unknown" || formData.e_coli_present === "unknown" || formData.e_coli_present === null
-                        ? "unknown"
-                        : (formData.e_coli_present === "present" || formData.e_coli_present === true ? "present" : "not_present")
-                    }
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setFormData((prev) => ({
-                        ...prev,
-                        e_coli_present: val,
-                        e_coli_count: val === "present" ? 1 : 0,
-                        coliform_count: val === "present" ? 1 : 0,
-                        status: val === "present" && (prev.status === "safe" || prev.status === "unknown")
-                          ? "contaminated"
-                          : val === "unknown"
-                          ? "unknown"
-                          : prev.status
-                      }));
-                    }}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
-                  >
-                    <option value="not_present">Not Present</option>
-                    <option value="present">Present</option>
-                    <option value="unknown">Unknown</option>
-                  </select>
-                </div>
-              </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">
+                        E. Coli Presence
+                      </label>
+                      <select
+                        value={
+                          formData.status === "unknown" || formData.e_coli_present === "unknown" || formData.e_coli_present === null
+                            ? "unknown"
+                            : (formData.e_coli_present === "present" || formData.e_coli_present === true ? "present" : "not_present")
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setFormData((prev) => ({
+                            ...prev,
+                            e_coli_present: val,
+                            e_coli_count: val === "present" ? 1 : 0,
+                            coliform_count: val === "present" ? 1 : 0,
+                            status: val === "present" && (prev.status === "safe" || prev.status === "unknown")
+                              ? "contaminated"
+                              : val === "unknown"
+                              ? "unknown"
+                              : prev.status
+                          }));
+                        }}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-medium"
+                      >
+                        <option value="not_present">Not Present</option>
+                        <option value="present">Present</option>
+                        <option value="unknown">Unknown</option>
+                      </select>
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Sample / Test Date</label>
-                  <input
-                    type="date"
-                    value={formData.sample_date}
-                    onChange={(e) => setFormData({ ...formData, sample_date: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Sample / Test Time</label>
-                  <input
-                    type="time"
-                    step="1"
-                    value={formData.sample_time}
-                    onChange={(e) => setFormData({ ...formData, sample_time: e.target.value })}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-              </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Sample / Test Date</label>
+                      <input
+                        type="date"
+                        value={formData.sample_date}
+                        onChange={(e) => { setSelectedHistoryDate(e.target.value || manilaDate()); setFormData({ ...formData, sample_date: e.target.value }); }}
+                        max={manilaDate()}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Sample / Test Time</label>
+                      <input
+                        type="time"
+                        step="1"
+                        value={formData.sample_time}
+                        onChange={(e) => setFormData({ ...formData, sample_time: e.target.value })}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600"
+                      />
+                    </div>
+                  </div>
+
+                </>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold uppercase tracking-wider text-slate-700 mb-1.5">Notes / Details</label>
@@ -2053,9 +2162,10 @@ const WaterSources = () => {
                   type="submit"
                   className="w-1/2 py-2.5 rounded-full bg-blue-900 hover:bg-blue-800 text-white font-semibold text-xs shadow-md cursor-pointer"
                 >
-                  {editingSource ? "Save Changes" : associatedReport ? "Confirm & Register Station" : "Register Station"}
+                  {saving ? "Saving..." : editingSource ? "Save Changes" : associatedReport ? "Confirm & Register Station" : "Register Station"}
                 </button>
               </div>
+              </fieldset>
             </form>
           </div>
         </div>
@@ -2073,6 +2183,7 @@ const WaterSources = () => {
             </button>
 
             {/* Modal Header */}
+            <ErrorNotice error={errorMsg} />
             <div className="flex items-center gap-3 mb-2">
               <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl">
                 <Inbox size={22} />
@@ -2334,6 +2445,7 @@ const WaterSources = () => {
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 relative animate-fade-in space-y-4">
             <h3 className="text-base font-bold text-slate-900">Dismiss Water Source Submission</h3>
+            <ErrorNotice error={errorMsg} />
             <p className="text-xs text-slate-600">
               Are you sure you want to dismiss <strong>"{dismissDialog.reportTitle}"</strong>? This will archive the report and notify the resident.
             </p>
@@ -2355,6 +2467,7 @@ const WaterSources = () => {
               <button
                 type="button"
                 onClick={() => setDismissDialog({ open: false, reportId: null, reportTitle: "", reason: "" })}
+                disabled={dismissing}
                 className="w-1/2 py-2.5 rounded-full border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
               >
                 Cancel
@@ -2362,6 +2475,7 @@ const WaterSources = () => {
               <button
                 type="button"
                 onClick={handleDismissSubmission}
+                disabled={dismissing}
                 className="w-1/2 py-2.5 rounded-full bg-red-600 hover:bg-red-700 text-white font-semibold text-xs shadow-md cursor-pointer"
               >
                 Confirm Dismiss

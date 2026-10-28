@@ -72,7 +72,7 @@ const LocationPickerMap = ({ value, onChange, waterSources = [], accent = "blue"
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
+      style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [initLng, initLat],
       zoom: 14,
     });

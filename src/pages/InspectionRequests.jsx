@@ -1,3 +1,5 @@
+import useReportRefresh from "../hooks/useReportRefresh";
+import ErrorNotice from "../components/ErrorNotice";
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { 
@@ -28,28 +30,35 @@ import { MAASIN_BARANGAYS as barangays } from "../constants/barangays";
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_KEY || "pk.eyJ1Ijoiamx0dCIsImEiOiJjbW9pNHBpZTgwMHB3MnFxMHNxcnY0MXBiIn0.__mzgeQcXuEDVkV6q8QNfQ";
 
+const categoryTitle = (category) => ({
+  request_inspection: "Water Inspection Request",
+  water_quality: "Water Quality Concern",
+  broken_pipe: "Damaged / Broken Pipeline",
+  toilet_proximity: "Unhygienic Toilet Proximity",
+  unregistered_source: "Unregistered Water Source",
+  new_source: "New Water Source",
+  other: "Other Concern",
+}[category] || (category || "Inspection Request").replace(/_/g, " "));
+
 const extractPhoto = (item) => {
   if (!item) return null;
   if (item.image_url) return item.image_url;
   if (item.photo_url) return item.photo_url;
   if (item.description) {
-    const match = item.description.match(/\[(?:Attached )?Photo Proof:\s*(https?:\/\/[^\s\]]+)\]/i)
+    const match = item.description.match(/\[(?:Attached )?Photo Proof:\s*([^\]]+)\]/i)
       || item.description.match(/(https?:\/\/[^\s]+\.(?:png|jpg|jpeg|webp|gif))/i);
-    if (match) return match[1];
+    if (match) return match[1].trim();
   }
   return null;
 };
 
 const cleanDescription = (item) => {
   if (!item) return "";
-  if (item.clean_description) return item.clean_description;
-  if (item.description) {
-    return item.description
-      .replace(/\[(?:Attached )?Photo Proof:\s*https?:\/\/[^\s\]]+\]/gi, "")
-      .replace(/\[Inspected Source:[^\]]+\]\s*/gi, "")
-      .trim();
-  }
-  return "";
+  const raw = item.clean_description || item.description || "";
+  return raw
+    .replace(/\[(?:Attached )?Photo Proof:[^\]]*\]/gi, "")
+    .replace(/\[Inspected Source:[^\]]*\]\s*/gi, "")
+    .trim();
 };
 
 const InspectionRequests = () => {
@@ -67,17 +76,10 @@ const InspectionRequests = () => {
 
   // View Modal state
   const [selectedInspection, setSelectedInspection] = useState(null);
-  const [barangayLocations, setBarangayLocations] = useState([]);
-  const [loadingLocations, setLoadingLocations] = useState(false);
+  const [showDismissForm, setShowDismissForm] = useState(false);
+  const [dismissReason, setDismissReason] = useState("");
   const [selectedLocationId, setSelectedLocationId] = useState("");
   const [matchedWaterSource, setMatchedWaterSource] = useState(null);
-
-  // Inspection form inputs inside View Modal
-  const [waterStatus, setWaterStatus] = useState("unknown"); // 'unknown', 'safe', 'warning', 'undrinkable'
-  const [eColi, setEColi] = useState("Not Present"); // 'Not Present', 'Present'
-  const [sampleDate, setSampleDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [sampleTime, setSampleTime] = useState(() => new Date().toTimeString().split(" ")[0]);
-  const [notes, setNotes] = useState("");
 
   // Image preview in modal
   const [previewPhoto, setPreviewPhoto] = useState(null);
@@ -87,59 +89,46 @@ const InspectionRequests = () => {
   const map = useRef(null);
   const marker = useRef(null);
 
-  const isInspector = user?.role === "sanitization_inspector";
+  const isInspector = ["sanitization_inspector", "admin"].includes(user?.role);
 
-  const fetchInspections = async () => {
+  const fetchInspections = async (showLoading = false) => {
     try {
-      setLoading(true);
+      if (showLoading === true) setLoading(true);
       const res = await fetch(`${API_URL}/inspections`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       const data = await res.json();
-      if (data.success && Array.isArray(data.data)) {
-        setInspections(data.data);
+      if (!res.ok || !data.success) throw new Error(data.detail || "Unable to load CHU reports.");
+      if (Array.isArray(data.data)) {
+        setInspections(data.data.map((item) => ({
+          ...item,
+          title: item.resident_report?.title || "Inspection request",
+          category: item.resident_report?.type || "request_inspection",
+          description: item.resident_report?.description || item.description,
+        })));
       }
     } catch (err) {
+      setErrorMsg(err.message || "Unable to load CHU reports.");
       console.error("Error fetching inspections:", err);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => {
-    fetchInspections();
-  }, [token, API_URL]);
+  useReportRefresh(fetchInspections, API_URL, token);
 
   // Open View Modal for an inspection ticket
   const handleOpenView = async (inspection) => {
+    setShowDismissForm(false);
+    setDismissReason("");
+    setErrorMsg("");
     setSelectedInspection(inspection);
     setSelectedLocationId(inspection.location_id || "");
     setMatchedWaterSource(null);
-    setNotes(inspection.notes || "");
     setPreviewPhoto(null);
-
-    // Initialize date and time defaults
-    const now = new Date();
-    setSampleDate(now.toISOString().split("T")[0]);
-    setSampleTime(now.toTimeString().split(" ")[0]);
-
-    // Try parsing existing notes if logged previously
-    if (inspection.notes) {
-      if (inspection.notes.includes("Status: SAFE")) setWaterStatus("safe");
-      else if (inspection.notes.includes("Status: WARNING") || inspection.notes.includes("Status: NEEDS_CHLORINATION")) setWaterStatus("warning");
-      else if (inspection.notes.includes("Status: UNDRINKABLE") || inspection.notes.includes("Status: CONTAMINATED")) setWaterStatus("undrinkable");
-      else if (inspection.notes.includes("Status: UNKNOWN")) setWaterStatus("unknown");
-
-      if (inspection.notes.includes("E. Coli: Present") || inspection.notes.includes("E. Coli: Positive")) setEColi("Present");
-      else if (inspection.notes.includes("E. Coli: Not Present") || inspection.notes.includes("E. Coli: Negative")) setEColi("Not Present");
-    } else {
-      setWaterStatus("unknown");
-      setEColi("Not Present");
-    }
 
     // Fetch water sources to identify the resident's selected water source
     try {
-      setLoadingLocations(true);
       const url = inspection.barangay 
         ? `${API_URL}/water-locations?barangay=${encodeURIComponent(inspection.barangay)}`
         : `${API_URL}/water-locations`;
@@ -149,7 +138,6 @@ const InspectionRequests = () => {
       let locs = [];
       if (data.success && Array.isArray(data.data)) {
         locs = data.data;
-        setBarangayLocations(locs);
       }
 
       // Resolve the fixed water source selected by resident
@@ -168,59 +156,21 @@ const InspectionRequests = () => {
         }
       }
 
-      // 3. [Inspected Source: <name>] in description
-      if (!found && inspection.description) {
-        const nameMatch = inspection.description.match(/\[Inspected Source:\s*([^\]\)]+)/i);
-        if (nameMatch) {
-          const targetName = nameMatch[1].trim().toLowerCase();
-          found = locs.find((l) => (l.full_name || l.name || "").toLowerCase().includes(targetName));
-        }
-      }
-
-      // 4. Substring name match in title / description
-      if (!found && inspection.description) {
-        const descLower = inspection.description.toLowerCase();
-        found = locs.find((l) => {
-          const locName = (l.full_name || l.name || "").toLowerCase().trim();
-          return locName && locName.length > 2 && descLower.includes(locName);
-        });
-      }
-
-      // 5. GPS Coordinates match
-      if (!found && inspection.latitude && inspection.longitude) {
-        const iLat = parseFloat(inspection.latitude);
-        const iLng = parseFloat(inspection.longitude);
-        found = locs.find((l) => {
-          return Math.abs(parseFloat(l.latitude) - iLat) < 0.001 && Math.abs(parseFloat(l.longitude) - iLng) < 0.001;
-        });
-      }
-
-      // 6. If not found and barangay has stations, pick the primary station for this barangay
-      if (!found && locs.length > 0) {
-        found = locs[0];
-      }
-
       if (found) {
         setMatchedWaterSource(found);
         setSelectedLocationId(found.id);
-        if (found.status && !inspection.notes) {
-          setWaterStatus(found.status);
-        }
+
       }
     } catch (err) {
       console.error("Error fetching water sources for barangay:", err);
-    } finally {
-      setLoadingLocations(false);
     }
   };
 
   // Close View Modal and teardown map
   const handleCloseView = () => {
     setSelectedInspection(null);
-    setBarangayLocations([]);
     setSelectedLocationId("");
     setMatchedWaterSource(null);
-    setNotes("");
     if (map.current) {
       map.current.remove();
       map.current = null;
@@ -239,7 +189,7 @@ const InspectionRequests = () => {
 
     map.current = new mapboxgl.Map({
       container: mapContainer.current,
-      style: "mapbox://styles/mapbox/streets-v12",
+      style: "mapbox://styles/mapbox/satellite-streets-v12",
       center: [lng, lat],
       zoom: hasSpecificCoords ? 15 : 13,
     });
@@ -282,12 +232,10 @@ const InspectionRequests = () => {
 
   // Action: Transition ticket from Pending Review to Processing (in_progress)
   const handleSetProcessing = async () => {
-    if (!selectedInspection) return;
+    if (!selectedInspection || isUpdating || ["completed", "cancelled"].includes(selectedInspection.status)) return;
     setIsUpdating(true);
     setSuccessMsg("");
     setErrorMsg("");
-
-    const locId = selectedLocationId || matchedWaterSource?.id;
 
     try {
       const res = await fetch(`${API_URL}/inspections/${selectedInspection.id}`, {
@@ -297,18 +245,16 @@ const InspectionRequests = () => {
           Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-          status: "in_progress",
-          location_id: locId || undefined
+          status: "in_progress"
         })
       });
 
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg(`Status updated to Processing! You may now review the water source status and mark as Done.`);
+        setSuccessMsg(`Report is now Processing. Mark it Done when processing is complete.`);
         setSelectedInspection({
           ...selectedInspection,
-          status: "in_progress",
-          location_id: locId || selectedInspection.location_id
+          ...data.data
         });
         fetchInspections();
       } else {
@@ -322,70 +268,48 @@ const InspectionRequests = () => {
     }
   };
 
-  // Action: Click "Done" to change status to done/completed and save all changes on the water source
-  const handleMarkDone = async (e) => {
-    e.preventDefault();
-    if (!selectedInspection) return;
+  // Completing a ticket updates only report processing status.
+  const handleMarkDone = async () => {
+    if (!selectedInspection || selectedInspection.status !== "in_progress" || isUpdating) return;
     setIsUpdating(true);
     setSuccessMsg("");
     setErrorMsg("");
-
-    const auditSummary = `[Lab & Field Audit]: Status: ${waterStatus.toUpperCase()} | E. Coli: ${eColi} | Date: ${sampleDate} ${sampleTime}. Notes: ${notes}`;
-
     try {
-      // 1. If a water source is selected/fixed, update the water source status and properties
-      const locId = selectedLocationId || matchedWaterSource?.id;
-      if (locId) {
-        const isEColiUnknown = eColi === "Unknown" || waterStatus === "unknown";
-        const waterLocationPayload = {
-          status: waterStatus,
-          notes: notes || auditSummary,
-          bacteriological_exam: isEColiUnknown ? "untested" : (waterStatus === "safe" ? "passed" : "failed"),
-          e_coli: isEColiUnknown ? null : (eColi === "Present"),
-          coliform_bacteria: isEColiUnknown ? null : (eColi === "Present"),
-          sample_date: sampleDate,
-          sample_time: sampleTime,
-        };
-
-        const locRes = await fetch(`${API_URL}/water-locations/${locId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`
-          },
-          body: JSON.stringify(waterLocationPayload)
-        });
-
-        if (!locRes.ok) {
-          console.warn("Water location update response was not OK, continuing with inspection update...");
-        }
-      }
-
-      // 2. Mark inspection ticket as completed (Done)
-      const inspRes = await fetch(`${API_URL}/inspections/${selectedInspection.id}`, {
+      const res = await fetch(`${API_URL}/inspections/${selectedInspection.id}`, {
         method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`
-        },
-        body: JSON.stringify({
-          status: "completed",
-          notes: auditSummary,
-          location_id: locId || undefined
-        })
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: "completed" }),
       });
-
-      const inspData = await inspRes.json();
-      if (inspData.success) {
-        setSuccessMsg(`Inspection ticket marked as Done! All changes have been saved to the water source.`);
-        handleCloseView();
-        fetchInspections();
-      } else {
-        setErrorMsg(inspData.detail || "Failed to mark inspection ticket as Done.");
-      }
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || "Could not mark the report Done.");
+      setSuccessMsg("Report marked Done.");
+      handleCloseView();
+      fetchInspections();
     } catch (err) {
-      console.error("Error marking inspection as done:", err);
-      setErrorMsg("Network error saving changes.");
+      setErrorMsg(err.message || "Could not complete the report. Please try again.");
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
+  const handleDismissInspection = async () => {
+    if (!selectedInspection || isUpdating || !dismissReason.trim()) return;
+    setIsUpdating(true);
+    setErrorMsg("");
+    setSuccessMsg("");
+    try {
+      const res = await fetch(`${API_URL}/inspections/${selectedInspection.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: "cancelled", notes: [selectedInspection.notes, `Dismissal reason: ${dismissReason.trim()}`].filter(Boolean).join("\n\n") }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) throw new Error(data.detail || "Could not dismiss the inspection.");
+      setSuccessMsg("Inspection dismissed. The linked resident report has been updated.");
+      handleCloseView();
+      fetchInspections();
+    } catch (err) {
+      setErrorMsg(err.message || "Could not dismiss the inspection. Please try again.");
     } finally {
       setIsUpdating(false);
     }
@@ -396,17 +320,19 @@ const InspectionRequests = () => {
     (i) => selectedBarangay === "all" || i.barangay?.toLowerCase() === selectedBarangay.toLowerCase()
   );
   const statusCounts = {
-    pending: barangayScoped.filter((i) => !i.status || i.status === "pending").length,
+    pending: barangayScoped.filter((i) => !i.status || ["pending", "assigned"].includes(i.status)).length,
     in_progress: barangayScoped.filter((i) => i.status === "in_progress").length,
     completed: barangayScoped.filter((i) => i.status === "completed" || i.status === "done").length,
+    cancelled: barangayScoped.filter((i) => i.status === "cancelled").length,
     all: barangayScoped.length,
   };
 
   const statusTabs = [
     { key: "pending", label: "Pending Review", active: "bg-amber-600 text-white shadow-sm", badgeActive: "bg-amber-800/40 text-white", badge: "bg-amber-100 text-amber-800" },
     { key: "in_progress", label: "Processing", active: "bg-blue-600 text-white shadow-sm", badgeActive: "bg-blue-800/40 text-white", badge: "bg-blue-100 text-blue-800" },
-    { key: "completed", label: "Done / Completed", active: "bg-emerald-600 text-white shadow-sm", badgeActive: "bg-emerald-800/40 text-white", badge: "bg-emerald-100 text-emerald-800" },
-    { key: "all", label: "All Requests", active: "bg-slate-800 text-white shadow-sm", badgeActive: "bg-white/20 text-white", badge: "bg-slate-100 text-slate-700" },
+    { key: "completed", label: "Done", active: "bg-emerald-600 text-white shadow-sm", badgeActive: "bg-emerald-800/40 text-white", badge: "bg-emerald-100 text-emerald-800" },
+    { key: "cancelled", label: "Dismissed", active: "bg-slate-600 text-white", badgeActive: "text-white", badge: "bg-slate-100 text-slate-700" },
+    { key: "all", label: "All Reports", active: "bg-slate-800 text-white shadow-sm", badgeActive: "bg-white/20 text-white", badge: "bg-slate-100 text-slate-700" },
   ];
 
   // Filter inspections based on Status and Barangay
@@ -417,9 +343,11 @@ const InspectionRequests = () => {
     if (selectedStatus === "all") {
       matchStatus = true;
     } else if (selectedStatus === "pending") {
-      matchStatus = !i.status || i.status === "pending";
+      matchStatus = !i.status || ["pending", "assigned"].includes(i.status);
     } else if (selectedStatus === "in_progress") {
       matchStatus = i.status === "in_progress";
+    } else if (selectedStatus === "cancelled") {
+      matchStatus = i.status === "cancelled";
     } else if (selectedStatus === "completed") {
       matchStatus = i.status === "completed" || i.status === "done";
     }
@@ -435,9 +363,9 @@ const InspectionRequests = () => {
           <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
             Field Operations & Sampling
           </span>
-          <h1 className="text-3xl font-extrabold text-white">Inspection & Audit Requests</h1>
+          <h1 className="text-3xl font-extrabold text-white">CHU Reports & Inspections</h1>
           <p className="text-white/80 text-sm max-w-xl">
-            Manage citizen-requested field inspections, on-site microbial laboratory testing, and water source audits passed by Barangay Officials.
+            Review forwarded concerns and water sources in one queue. Start Processing, record findings, then mark Done. Status updates are shared with barangay officials and residents.
           </p>
         </div>
 
@@ -469,12 +397,7 @@ const InspectionRequests = () => {
         </div>
       )}
 
-      {errorMsg && (
-        <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs flex items-center gap-2 shadow-sm animate-fade-in">
-          <AlertCircle size={18} className="text-red-600 flex-shrink-0" />
-          <span className="font-medium">{errorMsg}</span>
-        </div>
-      )}
+      {!selectedInspection && <ErrorNotice error={errorMsg} />}
 
       {/* Status Filter Tabs (left) + Barangay filter & count (right) */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -521,7 +444,7 @@ const InspectionRequests = () => {
       {/* Inspections Table: No Priority column, and Actions has View button */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
         <div className="p-6 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="font-bold text-sm text-slate-900">Active Field Inspection Tickets</h3>
+          <h3 className="font-bold text-sm text-slate-900">Citizen Reports, Endorsements & Water Sources</h3>
         </div>
 
         <div className="overflow-x-auto">
@@ -551,12 +474,13 @@ const InspectionRequests = () => {
                 filtered.map((i) => {
                   const isCompleted = i.status === "completed" || i.status === "done";
                   const isInProgress = i.status === "in_progress";
-                  const isPending = !i.status || i.status === "pending";
+                  const isPending = !i.status || ["pending", "assigned"].includes(i.status);
 
                   return (
                     <tr key={i.id} className="hover:bg-slate-50/80 transition-colors">
                       <td className="py-4 px-6">
-                        <p className="font-bold text-slate-900 text-sm">Brgy. {i.barangay}</p>
+                        <p className="font-bold text-slate-900 text-sm">{i.title}</p>
+                        <p className="text-slate-500 mt-1">Brgy. {i.barangay} | {i.category?.replace(/_/g, " ")}</p>
                         {(i.latitude || i.longitude) && (
                           <div className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 mt-1 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
                             <MapPin size={10} />
@@ -580,7 +504,7 @@ const InspectionRequests = () => {
                           {isInProgress && <Activity size={10} />}
                           {isCompleted && <CheckCircle2 size={10} />}
                           {isPending && <Clock size={10} />}
-                          <span>{isCompleted ? "Done" : isInProgress ? "Processing" : "Pending Review"}</span>
+                          <span>{isCompleted ? "Done" : i.status === "cancelled" ? "Dismissed" : isInProgress ? "Processing" : "Pending Review"}</span>
                         </span>
                       </td>
 
@@ -590,7 +514,7 @@ const InspectionRequests = () => {
                             "{i.notes}"
                           </p>
                         ) : (
-                          <span className="text-slate-400 italic text-[11px]">No lab notes logged yet</span>
+                          <span className="text-slate-400 italic text-[11px]">No report notes</span>
                         )}
                       </td>
 
@@ -600,6 +524,10 @@ const InspectionRequests = () => {
 
                       <td className="py-4 px-6 text-right">
                         <div className="inline-flex items-center gap-1.5 justify-end">
+                          {["unregistered_source", "new_source"].includes(i.category) && i.resident_report_id && !isCompleted && i.status !== "cancelled" && (
+                            <Link to={`/water-sources?view=resident-submissions&report=${encodeURIComponent(i.resident_report_id)}`}
+                              className="px-3 py-1.5 rounded-xl bg-cyan-50 text-cyan-800 font-semibold">Review Source</Link>
+                          )}
                           <button
                             onClick={() => handleOpenView(i)}
                             className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
@@ -622,6 +550,7 @@ const InspectionRequests = () => {
       {selectedInspection && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
           <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-100 relative animate-fade-in space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+            <ErrorNotice error={errorMsg} />
             {/* Modal Header */}
             <div className="flex justify-between items-start pb-3 border-b border-slate-100">
               <div className="space-y-1">
@@ -640,12 +569,14 @@ const InspectionRequests = () => {
                       ? "Done"
                       : selectedInspection.status === "in_progress"
                       ? "Processing"
-                      : "Pending Review"}
+                      : selectedInspection.status === "cancelled" ? "Dismissed" : "Pending Review"}
                   </span>
                 </div>
                 <h2 className="text-xl font-extrabold text-slate-900">
                   Brgy. {selectedInspection.barangay} Inspection
                 </h2>
+                <p className="text-xs font-semibold text-blue-700">Category: {categoryTitle(selectedInspection.category)}</p>
+                {selectedInspection.title && <p className="text-sm font-medium text-slate-800">{selectedInspection.title}</p>}
                 <p className="text-xs text-slate-500">
                   Requested on {selectedInspection.created_at ? new Date(selectedInspection.created_at).toLocaleDateString() : "Recent"}
                 </p>
@@ -726,44 +657,8 @@ const InspectionRequests = () => {
                 )}
               </div>
 
-              {/* Bottom Section: If Pending Review, show the Action card at the bottom */}
-              {(!selectedInspection.status || selectedInspection.status === "pending") && (
-                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 text-amber-900 space-y-3">
-                  <div className="flex items-start gap-2.5">
-                    <Clock size={18} className="text-amber-600 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <p className="text-xs font-bold text-amber-900">Current Status: Pending Review</p>
-                      <p className="text-[11px] text-amber-700 leading-relaxed mt-0.5">
-                        Click below to start field operations and update the ticket status to <strong>Processing</strong>. Once processing, you can update water source status and inputs.
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={handleSetProcessing}
-                    disabled={isUpdating}
-                    className="w-full py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-                  >
-                    <Activity size={14} className={isUpdating ? "animate-spin" : ""} />
-                    <span>{isUpdating ? "Starting..." : "Start Inspection"}</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Bottom Section: If Processing (or Completed), show the Fixed Water Source Form & Done button */}
-              {(selectedInspection.status === "in_progress" || selectedInspection.status === "completed" || selectedInspection.status === "done") && (
-                <form onSubmit={handleMarkDone} className="space-y-4 pt-1">
-                  {selectedInspection.status === "in_progress" && (
-                    <div className="p-3 bg-cyan-50 border border-cyan-200 rounded-2xl flex items-center justify-between text-xs text-cyan-900">
-                      <div className="flex items-center gap-2">
-                        <Activity size={14} className="text-cyan-600 animate-pulse" />
-                        <span className="font-bold">Status: Processing (Field Testing Active)</span>
-                      </div>
-                      <span className="text-[10px] text-cyan-700">Inputs Editable</span>
-                    </div>
-                  )}
-
+              {["in_progress", "completed", "done"].includes(selectedInspection.status) && (
+                <div className="space-y-3">
                   {/* Fixed Water Source Station based on resident selection */}
                   <div>
                     <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center justify-between">
@@ -772,13 +667,13 @@ const InspectionRequests = () => {
                         <span>Water Source Station</span>
                       </span>
                       <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                        Resident Selected Source
+                        Selected Source
                       </span>
                     </label>
                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
                       <div className="space-y-0.5">
                         <p className="font-bold text-slate-900 text-xs">
-                          {matchedWaterSource?.full_name || matchedWaterSource?.name || `Water Station - Brgy. ${selectedInspection.barangay}`}
+                          {matchedWaterSource?.full_name || matchedWaterSource?.name || "No registered source selected"}
                         </p>
                         <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">
                           <span>Brgy. {selectedInspection.barangay}</span>
@@ -809,111 +704,46 @@ const InspectionRequests = () => {
                     </div>
                   </div>
 
-                  {/* Safety Status Dropdown (No icons) */}
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                      Safety Status
-                    </label>
-                    <select
-                      value={waterStatus}
-                      onChange={(e) => {
-                        const newStatus = e.target.value;
-                        setWaterStatus(newStatus);
-                        if (newStatus === "unknown") setEColi("Unknown");
-                        else if (newStatus === "safe") setEColi("Not Present");
-                        else if (newStatus === "undrinkable") setEColi("Present");
-                      }}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer"
-                    >
-                      <option value="unknown">Unknown</option>
-                      <option value="safe">Safe</option>
-                      <option value="warning">Warning</option>
-                      <option value="undrinkable">Undrinkable</option>
-                    </select>
-                  </div>
 
-                  {/* E. Coli Presence */}
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                      E. Coli Presence
-                    </label>
-                    <select
-                      value={waterStatus === "unknown" || eColi === "Unknown" ? "Unknown" : eColi}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setEColi(val);
-                        if (val === "Unknown") setWaterStatus("unknown");
-                        else if (val === "Present" && waterStatus === "safe") setWaterStatus("undrinkable");
-                      }}
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer"
-                    >
-                      <option value="Not Present">Not Present</option>
-                      <option value="Present">Present</option>
-                      <option value="Unknown">Unknown</option>
-                    </select>
-                  </div>
-
-                  {/* Sample / Test Date & Sample / Test Time */}
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                        Sample / Test Date
-                      </label>
-                      <input
-                        type="date"
-                        value={sampleDate}
-                        onChange={(e) => setSampleDate(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                        Sample / Test Time
-                      </label>
-                      <input
-                        type="time"
-                        step="1"
-                        value={sampleTime}
-                        onChange={(e) => setSampleTime(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Notes / Details */}
-                  <div>
-                    <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                      Notes / Details
-                    </label>
-                    <textarea
-                      rows={3}
-                      value={notes}
-                      onChange={(e) => setNotes(e.target.value)}
-                      placeholder="Enter on-site observations, physical water clarity, treatment applied, or sanitation directives..."
-                      className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 leading-relaxed"
-                    />
-                  </div>
-
-                  {/* Done Button to complete and save changes */}
-                  <div className="pt-2 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={handleCloseView}
-                      className="w-1/3 py-2.5 rounded-full border border-slate-200 text-slate-700 font-semibold text-xs hover:bg-slate-50 cursor-pointer"
-                    >
-                      Cancel
+                </div>
+              )}
+              {isInspector && !["completed", "done", "cancelled"].includes(selectedInspection.status) && (
+                <div className="flex gap-2">
+                  {selectedInspection.status === "in_progress" ? (
+                    <button type="button" onClick={handleMarkDone} disabled={isUpdating}
+                      className="flex-1 h-10 px-3 rounded-full border border-transparent bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50">
+                      <CheckCheck size={14} /> {isUpdating ? "Updating..." : "Done"}
                     </button>
-                    <button
-                      type="submit"
-                      disabled={isUpdating}
-                      className="w-2/3 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                    >
-                      <CheckCheck size={15} />
-                      <span>{isUpdating ? "Saving..." : "Done (Save Changes & Complete)"}</span>
+                  ) : (
+                    <button type="button" onClick={handleSetProcessing} disabled={isUpdating}
+                      className="flex-1 h-10 px-3 rounded-full border border-transparent bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50">
+                      <Activity size={14} /> {isUpdating ? "Updating..." : "Start Inspection"}
                     </button>
-                  </div>
-                </form>
+                  )}
+                  <button type="button" disabled={isUpdating} onClick={() => setShowDismissForm(true)}
+                    className="flex-1 h-10 px-3 rounded-full border border-red-200 bg-red-50 hover:bg-red-100 text-red-700 font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50">
+                    <X size={14} /> Dismiss Inspection
+                  </button>
+                </div>
+              )}
+              {isInspector && !["completed", "done", "cancelled"].includes(selectedInspection.status) && (
+                <div className="space-y-3">
+                  {showDismissForm && <>
+                    <label htmlFor="inspection-dismiss-reason" className="block text-xs font-semibold text-slate-700">Reason for dismissal</label>
+                    <textarea id="inspection-dismiss-reason" rows={2} value={dismissReason}
+                      disabled={isUpdating} onChange={(event) => setDismissReason(event.target.value)}
+                      placeholder="Explain why this inspection is being dismissed..."
+                      className="w-full rounded-xl border border-slate-200 p-3 text-xs focus:outline-none focus:border-red-400" />
+                    <div className="flex gap-2">
+                      <button type="button" disabled={isUpdating} onClick={() => setShowDismissForm(false)}
+                        className="flex-1 rounded-full border border-slate-200 py-2.5 text-xs font-semibold text-slate-600 disabled:opacity-50">Back</button>
+                      <button type="button" disabled={isUpdating || !dismissReason.trim()} onClick={handleDismissInspection}
+                        className="flex-1 rounded-full bg-red-600 hover:bg-red-700 py-2.5 text-xs font-bold text-white disabled:opacity-50 disabled:cursor-not-allowed">
+                        {isUpdating ? "Dismissing..." : "Confirm Dismissal"}
+                      </button>
+                    </div>
+                  </>}
+                </div>
               )}
             </div>
           </div>

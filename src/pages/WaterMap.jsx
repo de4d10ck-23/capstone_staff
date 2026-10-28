@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import {
@@ -22,6 +22,8 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { useMapForecast } from "../hooks/useMapForecast";
+import MapForecastControls, { riskLabel } from "../components/MapForecastControls";
 import officialFloodHazards from "../data/maasin_flood_hazards.json";
 import officialLandslideHazards from "../data/maasin_landslide_hazards.json";
 import { getBarangayPopulation } from "../constants/barangays";
@@ -39,7 +41,7 @@ const WaterMap = () => {
   const markersRef = useRef([]);
   const { token, API_URL, user } = useAuth();
 
-  const [locations, setLocations] = useState([]);
+  const [records, setLocations] = useState([]);
   const [households, setHouseholds] = useState([]);
 
   // Official Environmental Hazard Layers (Loaded from Maasin_LandFlood)
@@ -49,7 +51,7 @@ const WaterMap = () => {
   // Layer Toggles
   const [showFloodZones, setShowFloodZones] = useState(false);
   const [showLandslideZones, setShowLandslideZones] = useState(false);
-  const [showWaterHeatmap, setShowWaterHeatmap] = useState(false);
+  const [sanitationHeatmap, setShowWaterHeatmap] = useState(false);
   const [showMarkers, setShowMarkers] = useState(true);
 
   // Model-driven Water Contamination Heatmap Dataset
@@ -57,14 +59,21 @@ const WaterMap = () => {
   const [heatmapMeta, setHeatmapMeta] = useState(null);
 
   // Selections
-  const [selectedLocation, setSelectedLocation] = useState(null);
+  const [selection, setSelectedLocation] = useState(null);
   const [selectedHazardZone, setSelectedHazardZone] = useState(null);
 
   // Map Controls
-  const [mapStyle, setMapStyle] = useState("mapbox://styles/mapbox/streets-v12");
+  const [mapStyle, setMapStyle] = useState("mapbox://styles/mapbox/satellite-streets-v12");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedBarangay, setSelectedBarangay] = useState("all");
   const [loading, setLoading] = useState(true);
+  const forecast = useMapForecast(API_URL, records, selectedBarangay);
+  const { locations } = forecast;
+  const isModel = forecast.source === "model";
+  const showWaterHeatmap = !isModel && sanitationHeatmap;
+  const selectedRecord = locations.find((loc) => String(loc.id) === String(selection?.id));
+  const selectedLocation = useMemo(() => selection ? { ...selection, ...selectedRecord } : null,
+    [selection, selectedRecord]);
 
   const locationsRef = useRef(locations);
   locationsRef.current = locations;
@@ -103,7 +112,6 @@ const WaterMap = () => {
 
       if (locData.success && Array.isArray(locData.data)) {
         setLocations(locData.data);
-        locationsRef.current = locData.data;
       }
       if (houseData.success && Array.isArray(houseData.data)) {
         setHouseholds(houseData.data);
@@ -297,8 +305,8 @@ const WaterMap = () => {
   };
 
   // Render Water Contamination Heatmap (ML Risk Plumes)
-  const renderWaterHeatmap = () => {
-    if (!map.current || !map.current.isStyleLoaded()) return;
+  const renderWaterHeatmap = (styleReady = false) => {
+    if (!map.current || (!styleReady && !map.current.isStyleLoaded())) return;
 
     const wData = waterHeatmapDataRef.current || waterHeatmapData;
     const isWaterHeatActive = showWaterHeatmapRef.current ?? showWaterHeatmap;
@@ -325,20 +333,16 @@ const WaterMap = () => {
             visibility: isWaterHeatActive ? "visible" : "none",
           },
           paint: {
-            // Circle radius scales with zoom and with individual station's population-derived radius_scale
+            // Scale with zoom and each station's population-derived radius_scale.
             "circle-radius": [
-              "*",
-              ["coalesce", ["get", "radius_scale"], 1.0],
-              [
-                "interpolate",
-                ["linear"],
-                ["zoom"],
-                10, 8,
-                12, 18,
-                14, 42,
-                16, 95,
-                18, 200
-              ]
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              10, ["*", ["coalesce", ["get", "radius_scale"], 1.0], 8],
+              12, ["*", ["coalesce", ["get", "radius_scale"], 1.0], 18],
+              14, ["*", ["coalesce", ["get", "radius_scale"], 1.0], 42],
+              16, ["*", ["coalesce", ["get", "radius_scale"], 1.0], 95],
+              18, ["*", ["coalesce", ["get", "radius_scale"], 1.0], 200],
             ],
             "circle-color": [
               "match",
@@ -519,6 +523,9 @@ const WaterMap = () => {
     });
   };
 
+  const renderMarkersRef = useRef(renderMarkers);
+  renderMarkersRef.current = renderMarkers;
+
   // Map Initialization
   useEffect(() => {
     if (!mapContainer.current) return;
@@ -548,8 +555,10 @@ const WaterMap = () => {
     const reRenderAll = () => {
       checkZoomLabels();
       renderHazardLayers();
-      renderWaterHeatmap();
-      renderMarkers();
+      // load/style.load guarantees the style is ready for custom layers.
+      // Adding hazard sources above can make isStyleLoaded() false again.
+      renderWaterHeatmap(true);
+      renderMarkersRef.current();
     };
 
     mapInstance.on("zoom", checkZoomLabels);
@@ -577,24 +586,14 @@ const WaterMap = () => {
 
   const currentStyleRef = useRef(mapStyle);
 
-  // Dynamic Style Change with Layer Re-addition
+  // The persistent style.load handler restores overlays using the latest refs.
   useEffect(() => {
     if (!map.current) return;
     if (currentStyleRef.current !== mapStyle) {
       currentStyleRef.current = mapStyle;
       map.current.setStyle(mapStyle, { diff: false });
-
-      const reAddLayers = () => {
-        if (!map.current) return;
-        renderHazardLayers();
-        renderWaterHeatmap();
-        renderMarkers();
-      };
-
-      map.current.once("style.load", reAddLayers);
-      map.current.once("idle", reAddLayers);
     }
-  }, [mapStyle, showFloodZones, showLandslideZones, showWaterHeatmap, showMarkers]);
+  }, [mapStyle]);
 
   // Sync hazard and heatmap layers on state updates
   useEffect(() => {
@@ -618,6 +617,7 @@ const WaterMap = () => {
 
   return (
     <div className="h-[calc(100vh-110px)] sm:h-[calc(100vh-140px)] flex flex-col relative rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200/80 shadow-sm font-sans">
+      <MapForecastControls forecast={forecast} />
       {/* Top Controls Toolbar */}
       <div className="bg-white p-3 sm:p-4 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-4 z-10 shadow-sm">
         <div className="flex items-center justify-between w-full sm:w-auto gap-3">
@@ -629,7 +629,7 @@ const WaterMap = () => {
             </span>
           </div>
           <button
-            onClick={fetchData}
+            onClick={() => { fetchData(); forecast.retry(); }}
             className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex-shrink-0"
             title="Refresh map layers"
           >
@@ -673,8 +673,8 @@ const WaterMap = () => {
             ))}
           </select>
 
-          {/* Water Contamination Heatmap Toggle */}
-          <button
+          {/* The contamination plume represents recorded sanitation results. */}
+          {!isModel && <button
             onClick={() => {
               const next = !showWaterHeatmap;
               setShowWaterHeatmap(next);
@@ -682,7 +682,7 @@ const WaterMap = () => {
               renderWaterHeatmap();
               renderMarkers();
             }}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
               showWaterHeatmap
                 ? "bg-rose-600 text-white border-rose-700 shadow-sm"
                 : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
@@ -694,13 +694,13 @@ const WaterMap = () => {
             <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${showWaterHeatmap ? "bg-rose-800 text-white" : "bg-slate-100 text-slate-500"}`}>
               {showWaterHeatmap ? "ON" : "OFF"}
             </span>
-          </button>
+          </button>}
 
           {/* Water Station Pins Toggle */}
           <button
             onClick={() => setShowMarkers(!showMarkers)}
             disabled={showWaterHeatmap}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all cursor-pointer ${
+            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
               showWaterHeatmap
                 ? "bg-slate-100 text-slate-400 border-slate-200 opacity-60 cursor-not-allowed"
                 : showMarkers
@@ -716,32 +716,24 @@ const WaterMap = () => {
       </div>
 
       {/* Map Canvas */}
-      <div className="flex-1 relative">
+      <div className="staff-water-map flex-1 min-h-0 relative">
         <style>{`
+          .staff-water-map .mapboxgl-ctrl-top-right { top: ${isModel ? 60 : 0}px; }
           .show-zoom-labels .station-zoom-label {
             display: block !important;
           }
         `}</style>
         <div ref={mapContainer} className="w-full h-full" />
 
-        {/* Map Style Selector Overlay */}
-        <div className="absolute top-3 sm:top-4 left-3 sm:left-4 z-10 bg-white/95 backdrop-blur-md px-2 py-1.5 rounded-2xl shadow-lg border border-slate-200/80 flex items-center gap-1 text-[11px] sm:text-xs font-sans transition-all">
+        {/* Map style and forecast date controls */}
+        <div className="absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 z-10 flex items-start justify-between gap-2 pointer-events-none">
+        <div className="pointer-events-auto shrink-0 h-9 md:h-12 bg-white/95 backdrop-blur-md px-1.5 py-1 md:px-2.5 md:py-2 rounded-xl md:rounded-2xl shadow-lg border border-slate-200/80 flex items-center gap-1 text-[11px] sm:text-xs font-sans transition-all">
           <div className="px-1 text-slate-700">
             <Layers size={15} />
           </div>
           <button
-            onClick={() => setMapStyle("mapbox://styles/mapbox/streets-v12")}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
-              mapStyle === "mapbox://styles/mapbox/streets-v12"
-                ? "bg-[#0f3b82] text-white shadow-sm"
-                : "text-slate-700 hover:text-slate-900 font-medium hover:bg-slate-50"
-            }`}
-          >
-            Streets
-          </button>
-          <button
             onClick={() => setMapStyle("mapbox://styles/mapbox/satellite-streets-v12")}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
+            className={`px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl font-semibold transition-all cursor-pointer ${
               mapStyle === "mapbox://styles/mapbox/satellite-streets-v12"
                 ? "bg-[#0f3b82] text-white shadow-sm"
                 : "text-slate-700 hover:text-slate-900 font-medium hover:bg-slate-50"
@@ -750,16 +742,39 @@ const WaterMap = () => {
             Satellite
           </button>
           <button
-            onClick={() => setMapStyle("mapbox://styles/mapbox/light-v11")}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-xl font-semibold transition-all cursor-pointer ${
-              mapStyle === "mapbox://styles/mapbox/light-v11"
+            onClick={() => setMapStyle("mapbox://styles/mapbox/streets-v12")}
+            className={`px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl font-semibold transition-all cursor-pointer ${
+              mapStyle === "mapbox://styles/mapbox/streets-v12"
                 ? "bg-[#0f3b82] text-white shadow-sm"
                 : "text-slate-700 hover:text-slate-900 font-medium hover:bg-slate-50"
             }`}
           >
-            Light
+            Streets
           </button>
+
         </div>
+
+          {isModel && <label className="pointer-events-auto min-w-0 h-9 md:h-12 flex items-center rounded-xl md:rounded-2xl border border-slate-200/80 bg-white/95 backdrop-blur-md px-1.5 py-1 md:px-2.5 md:py-2 shadow-lg text-[11px] md:text-xs font-semibold text-slate-700">
+            <select aria-label="Forecast date" value={forecast.day}
+              onChange={(event) => forecast.setDay(Number(event.target.value))}
+              className="w-28 min-w-0 md:w-48 rounded-md border-0 bg-transparent px-1 py-1 text-[11px] md:text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+              {forecast.dates.map((item, index) => <option key={item.value} value={index}>{item.label}</option>)}
+            </select>
+          </label>}
+        </div>
+
+        {/* Loading Forecast Indicator (Bottom Center of Map) */}
+        {isModel && forecast.loading && (
+          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-200">
+            <div className="bg-white/95 backdrop-blur-md text-black text-xs md:text-sm font-semibold px-4 py-2 rounded-full shadow-xl border border-slate-200/90 flex items-center gap-2">
+              <svg className="animate-spin h-3.5 w-3.5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>Loading forecast...</span>
+            </div>
+          </div>
+        )}
 
         {/* Water Contamination Heatmap Spectrum (shown only when heatmap is active) */}
         {showWaterHeatmap && (
@@ -784,7 +799,7 @@ const WaterMap = () => {
 
         {/* Selected Water Location Detail Card */}
         {selectedLocation && (
-          <div className="absolute bottom-4 left-4 right-4 sm:top-6 sm:right-6 sm:bottom-auto sm:left-auto sm:w-84 z-40 bg-white rounded-3xl p-5 shadow-2xl border border-slate-100 animate-fade-in">
+          <div className="absolute bottom-4 left-4 right-4 sm:top-20 sm:right-6 sm:bottom-auto sm:left-auto sm:w-84 max-h-[70%] overflow-y-auto z-40 bg-white rounded-3xl p-5 shadow-2xl border border-slate-100 animate-fade-in">
             <div className="flex items-start justify-between pb-3 border-b border-slate-100">
               <div>
                 <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Station Overview</span>
@@ -799,9 +814,17 @@ const WaterMap = () => {
               </button>
             </div>
 
+            {isModel && <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 space-y-1">
+              <p className="font-semibold">Model forecast ? {forecast.dates[forecast.day].label}</p>
+              {selectedLocation.forecast ? <>
+                <p>Estimated risk: {selectedLocation.forecast.risk_percentage}%</p>
+                <p>Rain: {selectedLocation.forecast.environmental_metrics.rainfall_24h_mm} mm/day ? {selectedLocation.forecast.environmental_metrics.temperature_celsius}?C ? Humidity: {selectedLocation.forecast.environmental_metrics.humidity_percent}%</p>
+                <p>Updated: {new Date(selectedLocation.forecast.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} (PH){selectedLocation.forecast.stale ? ' ? Older forecast' : ''}</p>
+              </> : <p>{forecast.loading ? 'Loading forecast...' : 'Forecast unavailable for this station and date.'}</p>}
+            </div>}
             <div className="py-3 space-y-2.5 text-xs">
               <div className="flex justify-between items-center">
-                <span className="text-slate-500">Status:</span>
+                <span className="text-slate-500">{isModel ? "Estimated risk:" : "Status:"}</span>
                 <span
                   className={`font-bold uppercase px-2.5 py-0.5 rounded-full text-[10px] ${
                     selectedLocation.status?.toLowerCase() === "safe"
@@ -813,13 +836,13 @@ const WaterMap = () => {
                       : "bg-red-100 text-red-800 border border-red-200"
                   }`}
                 >
-                  {selectedLocation.status || "Unknown"}
+                  {isModel ? riskLabel(selectedLocation.status) : (selectedLocation.status || "Unknown")}
                 </span>
               </div>
 
               <div className="flex justify-between items-center py-0.5">
-                <span className="text-slate-500">E. Coli Presence:</span>
-                {selectedLocation.status?.toLowerCase() === "unknown" || selectedLocation.e_coli === null || selectedLocation.e_coli === undefined || selectedLocation.e_coli === "unknown" ? (
+                <span className="text-slate-500">E. Coli (latest test):</span>
+                {selectedLocation.e_coli === null || selectedLocation.e_coli === undefined || selectedLocation.e_coli === "unknown" ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-200">
                     <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                     <span>Unknown</span>
@@ -844,7 +867,7 @@ const WaterMap = () => {
                 </span>
               </div>
 
-              {selectedLocation.exposure_radius_meters && (
+              {!isModel && selectedLocation.exposure_radius_meters && (
                 <div className="flex justify-between items-center py-0.5">
                   <span className="text-slate-500">Exposure Radius:</span>
                   <span className="font-semibold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-md border border-rose-100">
@@ -867,7 +890,7 @@ const WaterMap = () => {
 
         {/* Selected Hazard Zone Details Card */}
         {selectedHazardZone && (
-          <div className="absolute bottom-4 left-4 right-4 sm:top-6 sm:right-6 sm:bottom-auto sm:left-auto sm:w-84 z-30 bg-white/95 backdrop-blur-md rounded-3xl p-5 shadow-2xl border border-rose-200 animate-fade-in">
+          <div className="absolute bottom-4 left-4 right-4 sm:top-20 sm:right-6 sm:bottom-auto sm:left-auto sm:w-84 z-30 bg-white/95 backdrop-blur-md rounded-3xl p-5 shadow-2xl border border-rose-200 animate-fade-in">
             <div className="flex items-start justify-between pb-3 border-b border-slate-100">
               <div>
                 <div className="flex items-center gap-1.5">

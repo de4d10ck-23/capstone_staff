@@ -98,7 +98,7 @@ const Dashboard = () => {
   const getRoleDisplayName = (role) => {
     switch (role) {
       case "city_health_officer":
-        return "CHU - City Health Officer";
+        return "CHU - DOCTOR";
       case "sanitization_inspector":
         return "CHU - Sanitization Inspector";
       case "barangay_official":
@@ -120,10 +120,12 @@ const Dashboard = () => {
   if (isBarangay) {
     const safeCount = sources.filter((s) => s.status?.toLowerCase() === "safe").length;
     const warningCount = sources.filter((s) => s.status?.toLowerCase() === "warning").length;
+    const openConcernCount = concerns.filter((concern) =>
+      !concern.status || concern.status === "pending" || concern.status === "validated"
+    ).length;
     const dangerCount = sources.filter(
       (s) => s.status?.toLowerCase() === "undrinkable" || s.status?.toLowerCase() === "contaminated"
     ).length;
-    const pendingConcerns = concerns.filter((c) => c.status === "pending");
 
     return (
       <div className="space-y-8 animate-fade-in font-sans">
@@ -149,7 +151,7 @@ const Dashboard = () => {
               className="px-5 py-2.5 rounded-full bg-white text-blue-900 font-semibold text-xs transition-all shadow hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-1.5"
             >
               <FileCheck size={16} />
-              <span>Validate Reports ({pendingConcerns.length})</span>
+              <span>Validate Reports</span>
             </Link>
             <Link
               to="/submit-report"
@@ -202,7 +204,7 @@ const Dashboard = () => {
           <div className="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between">
             <div>
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Citizen Concerns</p>
-              <h3 className="text-3xl font-bold text-blue-600 mt-1">{concerns.length}</h3>
+              <h3 className="text-3xl font-bold text-blue-600 mt-1">{openConcernCount}</h3>
             </div>
             <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
               <FileCheck size={24} />
@@ -302,7 +304,9 @@ const Dashboard = () => {
                 concerns.slice(0, 5).map((c) => (
                   <Link
                     key={c.id}
-                    to="/validate-reports"
+                    to={c.type === "unregistered_source" || c.category === "unregistered_source"
+                      ? "/water-sources?view=resident-submissions"
+                      : "/validate-reports"}
                     className="block p-3.5 rounded-xl bg-slate-50 hover:bg-blue-50/50 border border-slate-100 hover:border-blue-200 space-y-1.5 transition-all group"
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -380,14 +384,12 @@ const Dashboard = () => {
               <span>Review Reports ({reports.length})</span>
             </Link>
           )}
-          {!isCHO && (
-            <Link
-              to="/map"
-              className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/30 text-white font-semibold text-xs transition-all"
-            >
-              Live Water Map
-            </Link>
-          )}
+          <Link
+            to="/map"
+            className="px-5 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/30 text-white font-semibold text-xs transition-all"
+          >
+            Live Water Map
+          </Link>
         </div>
       </div>
 

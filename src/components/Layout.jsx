@@ -33,7 +33,7 @@ const Layout = () => {
         { to: "/alerts", icon: <Bell size={20} />, label: "Broadcast Alerts & Advisories" },
         { to: "/validate-reports", icon: <FileCheck size={20} />, label: "Validate Reports" },
         { to: "/water-sources", icon: <Droplets size={20} />, label: "Water Sources" },
-        { to: "/submit-report", icon: <Send size={20} />, label: "Submit Report" },
+        { to: "/submit-report", icon: <Send size={20} />, label: "Submit Concern" },
       ];
     }
 
@@ -42,13 +42,12 @@ const Layout = () => {
       { to: "/map", icon: <Map size={20} />, label: "Live Water Map" },
       { to: "/analytics", icon: <BarChart2 size={20} />, label: "Analytics & Trends" },
       { to: "/alerts", icon: <Bell size={20} />, label: "Broadcast Alerts & Advisories" },
-      { to: "/inspections", icon: <ClipboardList size={20} />, label: "Inspection Requests" },
+      { to: "/inspections", icon: <ClipboardList size={20} />, label: "CHU Reports & Inspections" },
     ];
 
     if (user?.role === 'sanitization_inspector') {
       return [
         ...baseNav,
-        { to: "/endorsed-reports", icon: <ShieldAlert size={20} />, label: "Endorsed Reports & Sources" },
         { to: "/water-sources", icon: <Droplets size={20} />, label: "Water Sources" },
         { to: "/generate-reports", icon: <FileText size={20} />, label: "Generate Reports" },
       ];
@@ -57,7 +56,8 @@ const Layout = () => {
     if (user?.role === 'city_health_officer') {
       return [
         { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Dashboard" },
-        { to: "/view-reports", icon: <FileText size={20} />, label: "View Reports" },
+        { to: "/map", icon: <Map size={20} />, label: "Live Water Map" },
+        { to: "/view-reports", icon: <FileText size={20} />, label: "Report Review" },
       ];
     }
 
@@ -67,7 +67,7 @@ const Layout = () => {
   const getRoleDisplayName = (role) => {
     switch (role) {
       case 'city_health_officer':
-        return 'CHU - City Health Officer';
+        return 'CHU - DOCTOR';
       case 'sanitization_inspector':
         return 'CHU - Sanitization Inspector';
       case 'barangay_official':
