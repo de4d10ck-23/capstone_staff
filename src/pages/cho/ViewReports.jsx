@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { downloadReport, reportResponse } from "../../utils/reportDownloads";
 import { reviewLabels, reviewStyles, reportDate } from "../../utils/reportWorkflow";
+import { notifyReportQueueChanged } from '../../utils/reportQueueEvents';
 import { FileText, Inbox, Eye, Printer, Download, RefreshCw, X, CheckCircle2, ClipboardCheck, Clock, Search, Loader2 } from "lucide-react";
 
 const tabs = [["submitted", "Received", Inbox], ["in_review", "Under Review", Clock], ["done", "Done Archive", CheckCircle2], ["all", "All Received", FileText]];
@@ -71,6 +72,7 @@ export default function ViewReports() {
       });
       const body = await response.json();
       if (!body.success) throw new Error(body.detail || "Could not update review status.");
+      notifyReportQueueChanged();
       setSuccess(action === "complete" ? "Review marked Done and archived. The inspector can see your review outcome." : "Review started. Record your conclusions when ready.");
       await loadReports(false);
       await openReport(report.id);

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import StaffPushAlerts, { unlinkStaffPush } from './StaffPushAlerts';
+import usePendingReportCount from '../hooks/usePendingReportCount';
 import { 
   LayoutDashboard, 
   Map, 
@@ -22,7 +24,11 @@ import {
 } from 'lucide-react';
 
 const Layout = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, token, API_URL } = useAuth();
+  const signOut = async () => {
+    try { await unlinkStaffPush(API_URL, token); } finally { logout(); }
+  };
+  const pendingReports = usePendingReportCount(user, token, API_URL);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const getNavItems = () => {
@@ -130,8 +136,16 @@ const Layout = () => {
               }`
             }
           >
-            {item.icon}
-            <span>{item.label}</span>
+            <span className="shrink-0">{item.icon}</span>
+            <span className="flex-1">{item.label}</span>
+            {pendingReports[item.to] > 0 && (
+              <span className="shrink-0 min-w-5 h-5 px-1 inline-flex items-center justify-center rounded-full text-[11px] font-bold ring-2 ring-white"
+                style={{ backgroundColor: '#f43f5e', color: '#ffffff' }}
+                role="status" aria-live="polite" aria-label={`${pendingReports[item.to]} items need action`}
+                title={`${pendingReports[item.to]} items need action`}>
+                {pendingReports[item.to] > 99 ? '99+' : pendingReports[item.to]}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -152,7 +166,7 @@ const Layout = () => {
         </div>
 
         <button 
-          onClick={logout}
+          onClick={signOut}
           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl border border-slate-200 bg-white hover:bg-red-50 hover:text-red-600 hover:border-red-200 text-slate-700 text-sm font-medium transition-all shadow-sm cursor-pointer"
         >
           <LogOut size={16} />
@@ -197,6 +211,7 @@ const Layout = () => {
             </button>
             <span className="text-xs sm:text-sm font-semibold text-slate-700 truncate">Staff Operational Portal</span>
           </div>
+          <StaffPushAlerts apiUrl={API_URL} token={token} userId={user?.id} />
         </header>
         
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">

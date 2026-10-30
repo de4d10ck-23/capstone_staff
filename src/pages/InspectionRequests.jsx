@@ -1,4 +1,5 @@
 import useReportRefresh from "../hooks/useReportRefresh";
+import { notifyReportQueueChanged } from '../utils/reportQueueEvents';
 import ErrorNotice from "../components/ErrorNotice";
 import React, { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
@@ -251,6 +252,7 @@ const InspectionRequests = () => {
 
       const data = await res.json();
       if (data.success) {
+        notifyReportQueueChanged();
         setSuccessMsg(`Report is now Processing. Mark it Done when processing is complete.`);
         setSelectedInspection({
           ...selectedInspection,
@@ -283,6 +285,7 @@ const InspectionRequests = () => {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.detail || "Could not mark the report Done.");
       setSuccessMsg("Report marked Done.");
+      notifyReportQueueChanged();
       handleCloseView();
       fetchInspections();
     } catch (err) {
@@ -306,6 +309,7 @@ const InspectionRequests = () => {
       const data = await res.json();
       if (!res.ok || !data.success) throw new Error(data.detail || "Could not dismiss the inspection.");
       setSuccessMsg("Inspection dismissed. The linked resident report has been updated.");
+      notifyReportQueueChanged();
       handleCloseView();
       fetchInspections();
     } catch (err) {

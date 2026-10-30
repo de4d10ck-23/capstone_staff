@@ -28,9 +28,7 @@ export function useMapForecast(API_URL, records, barangay) {
     date.setUTCDate(date.getUTCDate() + offset);
     return {
       value: new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(date),
-      label: offset === 0 ? "Today" : offset === 1 ? "Tomorrow" : new Intl.DateTimeFormat("en", {
-        timeZone: "Asia/Manila", weekday: "short", month: "short", day: "numeric",
-      }).format(date),
+      label: `${new Intl.DateTimeFormat("en", { timeZone: "Asia/Manila", weekday: "long" }).format(date)} ${new Intl.DateTimeFormat("en", { timeZone: "Asia/Manila", day: "numeric" }).format(date)}`,
     };
   }), [today]);
   const date = dates[day].value;

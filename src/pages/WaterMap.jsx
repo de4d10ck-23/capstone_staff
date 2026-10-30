@@ -1,32 +1,25 @@
+import ForecastTimeline from "../components/ForecastTimeline";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import {
   Droplets,
   ShieldCheck,
-  AlertTriangle,
-  Layers,
-  Navigation,
   RefreshCw,
   Eye,
   EyeOff,
   Search,
-  Shield,
-  MapPin,
-  Flame,
-  ShieldAlert,
-  Info,
-  Waves,
-  Mountain,
-  ChevronDown,
-  ExternalLink,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useMapForecast } from "../hooks/useMapForecast";
 import MapForecastControls, { riskLabel } from "../components/MapForecastControls";
-import officialFloodHazards from "../data/maasin_flood_hazards.json";
-import officialLandslideHazards from "../data/maasin_landslide_hazards.json";
 import { getBarangayPopulation } from "../constants/barangays";
+import HazardOverlay from "../components/HazardOverlay";
+import maasinBarangays from "../data/maasin_barangays.json";
+import { getBarangayFeature, getBarangayBounds } from "../utils/barangayBoundary";
+import { matchesBarangay, mapScopeOwner, resolveMapBarangay, UNASSIGNED_BARANGAY } from "../utils/barangayScope";
+
+const MAP_BARANGAYS = maasinBarangays.features.map(f => f.properties.ADM4_EN.replace(/\s*\(Pob\.?\)/gi, '').trim()).sort();
 
 const MAPBOX_TOKEN =
   import.meta.env.VITE_MAPBOX_KEY ||
@@ -39,18 +32,14 @@ const WaterMap = () => {
   const mapContainer = useRef(null);
   const map = useRef(null);
   const markersRef = useRef([]);
+  const [mapReady, setMapReady] = useState(false);
+  const [hazardRefresh, setHazardRefresh] = useState(0);
   const { token, API_URL, user } = useAuth();
 
   const [records, setLocations] = useState([]);
   const [households, setHouseholds] = useState([]);
 
-  // Official Environmental Hazard Layers (Loaded from Maasin_LandFlood)
-  const [floodHazards, setFloodHazards] = useState(officialFloodHazards);
-  const [landslideHazards, setLandslideHazards] = useState(officialLandslideHazards);
-
   // Layer Toggles
-  const [showFloodZones, setShowFloodZones] = useState(false);
-  const [showLandslideZones, setShowLandslideZones] = useState(false);
   const [sanitationHeatmap, setShowWaterHeatmap] = useState(false);
   const [showMarkers, setShowMarkers] = useState(true);
 
@@ -60,12 +49,16 @@ const WaterMap = () => {
 
   // Selections
   const [selection, setSelectedLocation] = useState(null);
-  const [selectedHazardZone, setSelectedHazardZone] = useState(null);
 
   // Map Controls
-  const [mapStyle, setMapStyle] = useState("mapbox://styles/mapbox/satellite-streets-v12");
+  const [mapStyle] = useState("mapbox://styles/mapbox/satellite-streets-v12");
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedBarangay, setSelectedBarangay] = useState("all");
+  const [areaSelection, setAreaSelection] = useState(null);
+  const selectedBarangay = resolveMapBarangay(user, areaSelection, MAP_BARANGAYS);
+  const setSelectedBarangay = (value) => {
+    setAreaSelection({ owner: mapScopeOwner(user), value });
+    setSelectedLocation(null);
+  };
   const [loading, setLoading] = useState(true);
   const forecast = useMapForecast(API_URL, records, selectedBarangay);
   const { locations } = forecast;
@@ -75,39 +68,37 @@ const WaterMap = () => {
   const selectedLocation = useMemo(() => selection ? { ...selection, ...selectedRecord } : null,
     [selection, selectedRecord]);
 
-  const locationsRef = useRef(locations);
-  locationsRef.current = locations;
+  const visibleLocations = useMemo(() => locations.filter(loc =>
+    matchesBarangay(loc.barangay, selectedBarangay) && (!searchQuery ||
+      (loc.name || loc.full_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (loc.barangay || '').toLowerCase().includes(searchQuery.toLowerCase()))
+  ), [locations, selectedBarangay, searchQuery]);
+  const locationsRef = useRef(visibleLocations);
+  locationsRef.current = visibleLocations;
   const showMarkersRef = useRef(showMarkers);
   showMarkersRef.current = showMarkers;
   const showWaterHeatmapRef = useRef(showWaterHeatmap);
   showWaterHeatmapRef.current = showWaterHeatmap;
-  const showFloodZonesRef = useRef(showFloodZones);
-  showFloodZonesRef.current = showFloodZones;
-  const showLandslideZonesRef = useRef(showLandslideZones);
-  showLandslideZonesRef.current = showLandslideZones;
-  const floodHazardsRef = useRef(floodHazards);
-  floodHazardsRef.current = floodHazards;
-  const landslideHazardsRef = useRef(landslideHazards);
-  landslideHazardsRef.current = landslideHazards;
-  const waterHeatmapDataRef = useRef(waterHeatmapData);
-  waterHeatmapDataRef.current = waterHeatmapData;
+  const scopedWaterHeatmap = useMemo(() => waterHeatmapData ? { ...waterHeatmapData,
+    features: (waterHeatmapData.features || []).filter(f => matchesBarangay(f.properties?.barangay, selectedBarangay)),
+  } : null, [waterHeatmapData, selectedBarangay]);
+  const waterHeatmapDataRef = useRef(scopedWaterHeatmap);
+  waterHeatmapDataRef.current = scopedWaterHeatmap;
 
   // Fetch all map data from backend
   const fetchData = async () => {
     try {
       setLoading(true);
-      const [locRes, houseRes, envRes, heatRes] = await Promise.all([
+      const [locRes, houseRes, heatRes] = await Promise.all([
         fetch(`${API_URL}/water-locations`),
         fetch(`${API_URL}/households/spatial`, {
           headers: { Authorization: `Bearer ${token}` },
         }),
-        fetch(`${API_URL}/hazards/environmental-layers`),
         fetch(`${API_URL}/forecast/heatmaps`),
       ]);
 
       const locData = await locRes.json();
       const houseData = await houseRes.json();
-      const envData = envRes.ok ? await envRes.json() : null;
       const heatData = heatRes.ok ? await heatRes.json() : null;
 
       if (locData.success && Array.isArray(locData.data)) {
@@ -117,20 +108,8 @@ const WaterMap = () => {
         setHouseholds(houseData.data);
       }
 
-      if (envData?.success) {
-        if (envData.flood_hazards?.features?.length > 0) {
-          setFloodHazards(envData.flood_hazards);
-          floodHazardsRef.current = envData.flood_hazards;
-        }
-        if (envData.landslide_hazards?.features?.length > 0) {
-          setLandslideHazards(envData.landslide_hazards);
-          landslideHazardsRef.current = envData.landslide_hazards;
-        }
-      }
-
       if (heatData?.success && heatData.data) {
         setWaterHeatmapData(heatData.data.water_contamination_heatmap);
-        waterHeatmapDataRef.current = heatData.data.water_contamination_heatmap;
         setHeatmapMeta(heatData.data);
       }
     } catch (err) {
@@ -144,178 +123,18 @@ const WaterMap = () => {
     fetchData();
   }, [token, API_URL]);
 
-  // Render Official Flood & Landslide Hazard Vector Layers
-  const renderHazardLayers = () => {
-    if (!map.current || !map.current.isStyleLoaded()) return;
-
-    const fData = floodHazardsRef.current || floodHazards;
-    const lData = landslideHazardsRef.current || landslideHazards;
-    const isFloodVisible = showFloodZonesRef.current ?? showFloodZones;
-    const isLandslideVisible = showLandslideZonesRef.current ?? showLandslideZones;
-
-    // 1. FLOOD HAZARDS (StudyAreaFlood_Maasin from Maasin_LandFlood)
-    const floodSourceId = "official-flood-hazard-source";
-    const floodFillId = "flood-hazard-fill";
-    const floodLineId = "flood-hazard-line";
-
-    if (fData?.features?.length > 0) {
-      if (map.current.getSource(floodSourceId)) {
-        map.current.getSource(floodSourceId).setData(fData);
-      } else {
-        map.current.addSource(floodSourceId, {
-          type: "geojson",
-          data: fData,
-        });
-
-        // Polygon Fill
-        map.current.addLayer({
-          id: floodFillId,
-          type: "fill",
-          source: floodSourceId,
-          layout: {
-            visibility: isFloodVisible ? "visible" : "none",
-          },
-          paint: {
-            "fill-color": ["coalesce", ["get", "color"], "#ef4444"],
-            "fill-opacity": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              10, 0.22,
-              14, 0.28,
-              18, 0.35,
-            ],
-          },
-        });
-
-        // Boundary Outline
-        map.current.addLayer({
-          id: floodLineId,
-          type: "line",
-          source: floodSourceId,
-          layout: {
-            visibility: isFloodVisible ? "visible" : "none",
-          },
-          paint: {
-            "line-color": ["coalesce", ["get", "color"], "#dc2626"],
-            "line-width": 1.5,
-            "line-opacity": 0.85,
-          },
-        });
-      }
-
-      if (map.current.getLayer(floodFillId)) {
-        map.current.setLayoutProperty(floodFillId, "visibility", isFloodVisible ? "visible" : "none");
-      }
-      if (map.current.getLayer(floodLineId)) {
-        map.current.setLayoutProperty(floodLineId, "visibility", isFloodVisible ? "visible" : "none");
-      }
-    }
-
-    // 2. LANDSLIDE HAZARDS (DENR-MGB sad.shp from Maasin_LandFlood)
-    const landslideSourceId = "official-landslide-hazard-source";
-    const landslideFillId = "landslide-hazard-fill";
-    const landslideLineId = "landslide-hazard-line";
-
-    if (lData?.features?.length > 0) {
-      if (map.current.getSource(landslideSourceId)) {
-        map.current.getSource(landslideSourceId).setData(lData);
-      } else {
-        map.current.addSource(landslideSourceId, {
-          type: "geojson",
-          data: lData,
-        });
-
-        map.current.addLayer({
-          id: landslideFillId,
-          type: "fill",
-          source: landslideSourceId,
-          layout: {
-            visibility: isLandslideVisible ? "visible" : "none",
-          },
-          paint: {
-            "fill-color": ["coalesce", ["get", "color"], "#9333ea"],
-            "fill-opacity": [
-              "interpolate",
-              ["linear"],
-              ["zoom"],
-              10, 0.18,
-              14, 0.24,
-              18, 0.32,
-            ],
-          },
-        });
-
-        map.current.addLayer({
-          id: landslideLineId,
-          type: "line",
-          source: landslideSourceId,
-          layout: {
-            visibility: isLandslideVisible ? "visible" : "none",
-          },
-          paint: {
-            "line-color": ["coalesce", ["get", "color"], "#7e22ce"],
-            "line-width": 1.5,
-            "line-dasharray": [2, 2],
-            "line-opacity": 0.8,
-          },
-        });
-      }
-
-      if (map.current.getLayer(landslideFillId)) {
-        map.current.setLayoutProperty(landslideFillId, "visibility", isLandslideVisible ? "visible" : "none");
-      }
-      if (map.current.getLayer(landslideLineId)) {
-        map.current.setLayoutProperty(landslideLineId, "visibility", isLandslideVisible ? "visible" : "none");
-      }
-    }
-
-    // Interactive Click & Hover listeners on Hazard Zones
-    if (!map.current._hazardZoneListenersAttached) {
-      map.current._hazardZoneListenersAttached = true;
-
-      const handleZoneClick = (e, type) => {
-        if (!e.features || !e.features.length) return;
-        const feat = e.features[0];
-        const props = feat.properties;
-
-        setSelectedHazardZone({
-          ...props,
-          hazard_type: type,
-          coordinates: [e.lngLat.lng, e.lngLat.lat],
-        });
-        setSelectedLocation(null);
-      };
-
-      map.current.on("click", floodFillId, (e) => handleZoneClick(e, "Flood Hazard"));
-      map.current.on("click", landslideFillId, (e) => handleZoneClick(e, "Landslide Hazard"));
-
-      const onEnter = () => {
-        map.current.getCanvas().style.cursor = "pointer";
-      };
-      const onLeave = () => {
-        map.current.getCanvas().style.cursor = "";
-      };
-
-      map.current.on("mouseenter", floodFillId, onEnter);
-      map.current.on("mouseleave", floodFillId, onLeave);
-      map.current.on("mouseenter", landslideFillId, onEnter);
-      map.current.on("mouseleave", landslideFillId, onLeave);
-    }
-  };
-
   // Render Water Contamination Heatmap (ML Risk Plumes)
   const renderWaterHeatmap = (styleReady = false) => {
     if (!map.current || (!styleReady && !map.current.isStyleLoaded())) return;
 
-    const wData = waterHeatmapDataRef.current || waterHeatmapData;
+    const wData = waterHeatmapDataRef.current;
     const isWaterHeatActive = showWaterHeatmapRef.current ?? showWaterHeatmap;
 
     const waterSourceId = "model-water-heatmap-source";
     const waterLayerId = "water-contamination-heat";
     const waterAuraLayerId = "water-contamination-aura";
 
-    if (wData?.features?.length > 0) {
+    if (wData?.features) {
       if (map.current.getSource(waterSourceId)) {
         map.current.getSource(waterSourceId).setData(wData);
       } else {
@@ -412,7 +231,6 @@ const WaterMap = () => {
               coliform_bacteria: props.coliform_count,
               e_coli: props.e_coli_count,
             });
-            setSelectedHazardZone(null);
           }
         });
 
@@ -452,15 +270,7 @@ const WaterMap = () => {
     const shouldShow = (showMarkersRef.current ?? showMarkers) && !isWaterHeatActive;
     if (!shouldShow) return;
 
-    const locList = locationsRef.current?.length ? locationsRef.current : locations;
-    const filtered = locList.filter((loc) => {
-      const matchQuery =
-        !searchQuery ||
-        (loc.name || loc.full_name)?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        loc.barangay?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchBarangay = selectedBarangay === "all" || loc.barangay === selectedBarangay;
-      return matchQuery && matchBarangay;
-    });
+    const filtered = locationsRef.current;
 
     filtered.forEach((loc) => {
       if (!loc.latitude || !loc.longitude) return;
@@ -498,14 +308,12 @@ const WaterMap = () => {
       el.addEventListener("click", (e) => {
         e.stopPropagation();
         setSelectedLocation(loc);
-        setSelectedHazardZone(null);
       });
 
       el.addEventListener("dblclick", (e) => {
         e.stopPropagation();
         e.preventDefault();
         setSelectedLocation(loc);
-        setSelectedHazardZone(null);
         if (map.current) {
           map.current.flyTo({
             center: [loc.longitude, loc.latitude],
@@ -554,9 +362,7 @@ const WaterMap = () => {
 
     const reRenderAll = () => {
       checkZoomLabels();
-      renderHazardLayers();
       // load/style.load guarantees the style is ready for custom layers.
-      // Adding hazard sources above can make isStyleLoaded() false again.
       renderWaterHeatmap(true);
       renderMarkersRef.current();
     };
@@ -575,6 +381,7 @@ const WaterMap = () => {
     }
 
     map.current = mapInstance;
+    setMapReady(true);
 
     return () => {
       resizeObserver.disconnect();
@@ -595,29 +402,35 @@ const WaterMap = () => {
     }
   }, [mapStyle]);
 
-  // Sync hazard and heatmap layers on state updates
   useEffect(() => {
-    if (map.current && map.current.isStyleLoaded()) {
-      renderHazardLayers();
-    }
-  }, [showFloodZones, showLandslideZones, floodHazards, landslideHazards]);
-
-  useEffect(() => {
-    if (map.current && map.current.isStyleLoaded()) {
-      renderWaterHeatmap();
-      renderMarkers();
-    }
-  }, [showWaterHeatmap, waterHeatmapData]);
+    const instance = map.current;
+    if (!instance) return;
+    const sync = () => {
+      if (instance.isStyleLoaded()) renderWaterHeatmap();
+      renderMarkersRef.current();
+    };
+    sync();
+    // A barangay can change while another source is loading. Apply the scoped
+    // heatmap when the map settles, including an empty result to clear old data.
+    instance.once('idle', sync);
+    return () => instance.off('idle', sync);
+  }, [showWaterHeatmap, scopedWaterHeatmap]);
 
   useEffect(() => {
     renderMarkers();
   }, [locations, showMarkers, searchQuery, selectedBarangay, selectedLocation]);
 
-  const barangays = Array.from(new Set(locations.map((l) => l.barangay).filter(Boolean))).sort();
+  useEffect(() => {
+    if (!mapReady || !map.current || selectedBarangay === 'all') return;
+    const bounds = getBarangayBounds(getBarangayFeature(selectedBarangay));
+    if (bounds) map.current.fitBounds(bounds, { padding: 55, maxZoom: 15.5, pitch: 0, bearing: 0 });
+  }, [mapReady, selectedBarangay]);
+
+  const barangays = [...MAP_BARANGAYS];
+  if (selectedBarangay !== 'all' && selectedBarangay !== UNASSIGNED_BARANGAY && !barangays.includes(selectedBarangay)) barangays.push(selectedBarangay);
 
   return (
     <div className="h-[calc(100vh-110px)] sm:h-[calc(100vh-140px)] flex flex-col relative rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200/80 shadow-sm font-sans">
-      <MapForecastControls forecast={forecast} />
       {/* Top Controls Toolbar */}
       <div className="bg-white p-3 sm:p-4 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-4 z-10 shadow-sm">
         <div className="flex items-center justify-between w-full sm:w-auto gap-3">
@@ -629,7 +442,7 @@ const WaterMap = () => {
             </span>
           </div>
           <button
-            onClick={() => { fetchData(); forecast.retry(); }}
+            onClick={() => { fetchData(); forecast.retry(); setHazardRefresh(value => value + 1); }}
             className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex-shrink-0"
             title="Refresh map layers"
           >
@@ -653,21 +466,12 @@ const WaterMap = () => {
           {/* Barangay Filter */}
           <select
             value={selectedBarangay}
-            onChange={(e) => {
-              const b = e.target.value;
-              setSelectedBarangay(b);
-              if (b !== "all" && map.current) {
-                const bLocs = locations.filter((l) => l.barangay?.toLowerCase() === b.toLowerCase() && l.latitude && l.longitude);
-                if (bLocs.length > 0) {
-                  const avgLat = bLocs.reduce((sum, l) => sum + l.latitude, 0) / bLocs.length;
-                  const avgLng = bLocs.reduce((sum, l) => sum + l.longitude, 0) / bLocs.length;
-                  map.current.flyTo({ center: [avgLng, avgLat], zoom: 15, duration: 1200 });
-                }
-              }
-            }}
+            aria-label="Water source barangay"
+            onChange={(e) => setSelectedBarangay(e.target.value)}
             className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
           >
             <option value="all">All Barangays</option>
+            {selectedBarangay === UNASSIGNED_BARANGAY && <option value={UNASSIGNED_BARANGAY}>No assigned barangay</option>}
             {barangays.map((b) => (
               <option key={b} value={b}>{b}</option>
             ))}
@@ -710,62 +514,32 @@ const WaterMap = () => {
             title={showWaterHeatmap ? "Pins hidden while Contamination Heatmap is active" : "Toggle Water Station Pins"}
           >
             {showMarkers && !showWaterHeatmap ? <Eye size={13} /> : <EyeOff size={13} />}
-            <span>Pins ({locations.length})</span>
+            <span>Pins ({visibleLocations.length})</span>
           </button>
         </div>
       </div>
 
       {/* Map Canvas */}
+      <div className="relative flex flex-col flex-1 min-w-0 min-h-0">
       <div className="staff-water-map flex-1 min-h-0 relative">
         <style>{`
-          .staff-water-map .mapboxgl-ctrl-top-right { top: ${isModel ? 60 : 0}px; }
+          .staff-water-map .mapboxgl-ctrl-top-right { top: 0px; }
+          .staff-water-map .mapboxgl-ctrl-bottom-left, .staff-water-map .mapboxgl-ctrl-bottom-right { bottom: ${isModel ? 60 : 0}px; }
           .show-zoom-labels .station-zoom-label {
             display: block !important;
           }
         `}</style>
         <div ref={mapContainer} className="w-full h-full" />
+        {mapReady && <HazardOverlay mapRef={map} area={selectedBarangay} onAreaChange={setSelectedBarangay} barangays={barangays} apiUrl={API_URL} token={token} refreshKey={hazardRefresh} />}
 
-        {/* Map style and forecast date controls */}
-        <div className="absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 z-10 flex items-start justify-between gap-2 pointer-events-none">
-        <div className="pointer-events-auto shrink-0 h-9 md:h-12 bg-white/95 backdrop-blur-md px-1.5 py-1 md:px-2.5 md:py-2 rounded-xl md:rounded-2xl shadow-lg border border-slate-200/80 flex items-center gap-1 text-[11px] sm:text-xs font-sans transition-all">
-          <div className="px-1 text-slate-700">
-            <Layers size={15} />
-          </div>
-          <button
-            onClick={() => setMapStyle("mapbox://styles/mapbox/satellite-streets-v12")}
-            className={`px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl font-semibold transition-all cursor-pointer ${
-              mapStyle === "mapbox://styles/mapbox/satellite-streets-v12"
-                ? "bg-[#0f3b82] text-white shadow-sm"
-                : "text-slate-700 hover:text-slate-900 font-medium hover:bg-slate-50"
-            }`}
-          >
-            Satellite
-          </button>
-          <button
-            onClick={() => setMapStyle("mapbox://styles/mapbox/streets-v12")}
-            className={`px-2 py-1 md:px-3 md:py-1.5 rounded-lg md:rounded-xl font-semibold transition-all cursor-pointer ${
-              mapStyle === "mapbox://styles/mapbox/streets-v12"
-                ? "bg-[#0f3b82] text-white shadow-sm"
-                : "text-slate-700 hover:text-slate-900 font-medium hover:bg-slate-50"
-            }`}
-          >
-            Streets
-          </button>
-
-        </div>
-
-          {isModel && <label className="pointer-events-auto min-w-0 h-9 md:h-12 flex items-center rounded-xl md:rounded-2xl border border-slate-200/80 bg-white/95 backdrop-blur-md px-1.5 py-1 md:px-2.5 md:py-2 shadow-lg text-[11px] md:text-xs font-semibold text-slate-700">
-            <select aria-label="Forecast date" value={forecast.day}
-              onChange={(event) => forecast.setDay(Number(event.target.value))}
-              className="w-28 min-w-0 md:w-48 rounded-md border-0 bg-transparent px-1 py-1 text-[11px] md:text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
-              {forecast.dates.map((item, index) => <option key={item.value} value={index}>{item.label}</option>)}
-            </select>
-          </label>}
+        {/* Map data controls float inside the main map. */}
+        <div className="absolute top-3 left-3 md:top-4 md:left-4 z-10 max-w-[calc(100%-4rem)]">
+          <MapForecastControls forecast={forecast} />
         </div>
 
         {/* Loading Forecast Indicator (Bottom Center of Map) */}
         {isModel && forecast.loading && (
-          <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-200">
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-200">
             <div className="bg-white/95 backdrop-blur-md text-black text-xs md:text-sm font-semibold px-4 py-2 rounded-full shadow-xl border border-slate-200/90 flex items-center gap-2">
               <svg className="animate-spin h-3.5 w-3.5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
@@ -817,7 +591,17 @@ const WaterMap = () => {
             {isModel && <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900 space-y-1">
               <p className="font-semibold">Model forecast ? {forecast.dates[forecast.day].label}</p>
               {selectedLocation.forecast ? <>
-                <p>Estimated risk: {selectedLocation.forecast.risk_percentage}%</p>
+                <p>{selectedLocation.forecast.hazard_assessment ? 'Risk index' : 'Estimated risk'}: {selectedLocation.forecast.risk_percentage}{selectedLocation.forecast.hazard_assessment ? ' / 100' : '%'}</p>
+                {selectedLocation.forecast.hazard_assessment && <div className="border-t border-blue-200 pt-2 space-y-1">
+                  <p>Natural-hazard coverage: {selectedLocation.forecast.hazard_assessment.coverage.replaceAll('_', ' ')}</p>
+                  <p>Hazard adjustment: +{(selectedLocation.forecast.risk_breakdown.hazard_adjustment * 100).toFixed(1)} points</p>
+                  {selectedLocation.forecast.hazard_assessment.contributions.map(item => <p key={`${item.category}-${item.code}`}>
+                    {item.label}: weight {item.weight}, exposure {(item.exposure * 100).toFixed(0)}%
+                    {item.distance_m != null ? ` (${item.distance_m} m away)` : ''}
+                    {item.inferred ? ' — estimated zone, reduced weight' : ''}
+                  </p>)}
+                  <p className="text-[10px]">Provisional hazard weights. This risk index is not a measured contamination probability or a water test result.</p>
+                </div>}
                 <p>Rain: {selectedLocation.forecast.environmental_metrics.rainfall_24h_mm} mm/day ? {selectedLocation.forecast.environmental_metrics.temperature_celsius}?C ? Humidity: {selectedLocation.forecast.environmental_metrics.humidity_percent}%</p>
                 <p>Updated: {new Date(selectedLocation.forecast.generated_at).toLocaleString('en-PH', { timeZone: 'Asia/Manila' })} (PH){selectedLocation.forecast.stale ? ' ? Older forecast' : ''}</p>
               </> : <p>{forecast.loading ? 'Loading forecast...' : 'Forecast unavailable for this station and date.'}</p>}
@@ -888,58 +672,9 @@ const WaterMap = () => {
           </div>
         )}
 
-        {/* Selected Hazard Zone Details Card */}
-        {selectedHazardZone && (
-          <div className="absolute bottom-4 left-4 right-4 sm:top-20 sm:right-6 sm:bottom-auto sm:left-auto sm:w-84 z-30 bg-white/95 backdrop-blur-md rounded-3xl p-5 shadow-2xl border border-rose-200 animate-fade-in">
-            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-rose-700">
-                    Official Environmental Hazard
-                  </span>
-                  <span className="text-[9px] px-2 py-0.5 rounded-full font-bold uppercase bg-rose-100 text-rose-800">
-                    {selectedHazardZone.risk_level || "Susceptible"}
-                  </span>
-                </div>
-                <h3 className="font-bold text-base text-slate-900 mt-1">
-                  {selectedHazardZone.risk_level} Zone
-                </h3>
-                <p className="text-xs text-slate-500">{selectedHazardZone.description}</p>
-              </div>
-              <button
-                onClick={() => setSelectedHazardZone(null)}
-                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100"
-              >
-                ✕
-              </button>
-            </div>
 
-            <div className="py-3 space-y-2 text-xs">
-              <div className="flex justify-between">
-                <span className="text-slate-500">Dataset Source:</span>
-                <span className="font-semibold text-slate-800">Maasin_LandFlood (DENR-MGB)</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Classification Code:</span>
-                <span className="font-mono font-bold text-slate-800">{selectedHazardZone.code}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500">Susceptibility Weight:</span>
-                <span className="font-mono font-bold text-rose-700">{selectedHazardZone.weight}</span>
-              </div>
-
-              <div className="p-2.5 bg-rose-50/80 border border-rose-200 rounded-xl space-y-1">
-                <span className="font-bold text-[11px] text-rose-900 flex items-center gap-1">
-                  <AlertTriangle size={12} className="text-rose-600" />
-                  Water Quality Impact
-                </span>
-                <p className="text-[10px] text-slate-700 leading-normal">
-                  During storm and monsoon events, runoff in this zone accelerates surface contamination, causing water sources within this boundary to face higher bacteriological contamination vulnerability.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
+      </div>
+      {isModel && <ForecastTimeline forecast={forecast} />}
       </div>
     </div>
   );

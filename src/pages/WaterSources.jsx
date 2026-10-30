@@ -2,6 +2,7 @@ import { historyDate, manilaDate, indexHistory, snapshotForDay, historyFormValue
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { notifyReportQueueChanged } from '../utils/reportQueueEvents';
 import ErrorNotice from "../components/ErrorNotice";
 import { 
   Droplets, 
@@ -794,6 +795,7 @@ const WaterSources = () => {
           list = list.filter((r) => !r.barangay || r.barangay.toLowerCase() === userBarangay.toLowerCase());
         }
         setResidentSubmissions(list);
+        notifyReportQueueChanged();
       }
     } catch (err) {
       console.error("Error fetching resident water source submissions:", err);

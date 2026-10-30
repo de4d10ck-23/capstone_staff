@@ -4,10 +4,9 @@ export const riskLabel = (status) => ({ safe: "Low risk", warning: "Moderate ris
   undrinkable: "High risk", contaminated: "High risk" }[status] || "Unavailable");
 
 export default function MapForecastControls({ forecast }) {
-  const { source, setSource, loading, error, retry } = forecast;
-  return <section aria-label="Map data source and forecast" className="shrink-0 border-b border-slate-200 bg-white px-3 py-2 md:px-4 md:py-3 space-y-1.5 md:space-y-2">
+  const { source, setSource, error, retry } = forecast;
+  return <section aria-label="Map data source and forecast" className="rounded-xl md:rounded-2xl border border-slate-200/80 bg-white/95 backdrop-blur-md shadow-lg px-2 py-2 md:px-3 space-y-1.5">
     <div className="flex flex-wrap items-center gap-1.5 md:gap-2">
-      <span className="text-[11px] md:text-xs font-bold text-slate-700 mr-1">Map data</span>
       {[['sanitation', 'Sanitation records'], ['model', 'Model forecast']].map(([value, label]) =>
         <button key={value} type="button" aria-pressed={source === value} onClick={() => setSource(value)}
           className={`rounded-md md:rounded-lg px-2 py-1.5 md:px-3 md:py-2 text-[11px] md:text-xs font-semibold ${source === value ? 'bg-blue-900 text-white' : 'bg-slate-100 text-slate-700'}`}>{label}</button>)}

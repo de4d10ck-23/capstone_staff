@@ -1,4 +1,5 @@
 import useReportRefresh from "../../hooks/useReportRefresh";
+import { notifyReportQueueChanged } from '../../utils/reportQueueEvents';
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { 
@@ -100,6 +101,7 @@ const ValidateReports = () => {
 
       const data = await res.json();
       if (data.success) {
+        notifyReportQueueChanged();
         if (passToInspector || newStatus === "escalated") {
           setSuccessMsg("Validated report passed directly to City Health Unit (CHU)! An active inspection ticket has been generated.");
         } else if (newStatus === "validated") {
