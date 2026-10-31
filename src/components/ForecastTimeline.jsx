@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 
+import ForecastWeatherIcon from "./ForecastWeatherIcon";
+
 export default function ForecastTimeline({ forecast }) {
   const selected = useRef(null);
   useEffect(() => {
@@ -16,7 +18,10 @@ export default function ForecastTimeline({ forecast }) {
             onClick={() => forecast.setDay(index)}
             className={`relative flex-1 min-w-28 border-r border-r-white/15 text-white px-3 py-3 text-xs whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-white ${active ? 'bg-white/25 font-bold' : 'hover:bg-white/10'}`}>
 
-            {date.label}
+            <span className="inline-flex items-center justify-center gap-2">
+              <ForecastWeatherIcon code={forecast.weatherDays?.find((item) => item.date === date.value)?.weather_code} />
+              <span>{date.label}</span>
+            </span>
           </button>;
         })}
       </div>

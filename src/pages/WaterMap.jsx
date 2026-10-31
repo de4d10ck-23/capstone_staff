@@ -533,19 +533,19 @@ const WaterMap = () => {
         {mapReady && <HazardOverlay mapRef={map} area={selectedBarangay} onAreaChange={setSelectedBarangay} barangays={barangays} apiUrl={API_URL} token={token} refreshKey={hazardRefresh} />}
 
         {/* Map data controls float inside the main map. */}
-        <div className="absolute top-3 left-3 md:top-4 md:left-4 z-10 max-w-[calc(100%-4rem)]">
+        <div className="absolute top-3 md:top-4 left-1/2 -translate-x-1/2 z-10 w-max max-w-[calc(100%-4rem)]">
           <MapForecastControls forecast={forecast} />
         </div>
 
-        {/* Loading Forecast Indicator (Bottom Center of Map) */}
-        {isModel && forecast.loading && (
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-200">
+        {/* Loading indicator for the selected map data source. */}
+        {(isModel ? forecast.loading : loading) && (
+          <div role="status" aria-live="polite" className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 pointer-events-none transition-all duration-200">
             <div className="bg-white/95 backdrop-blur-md text-black text-xs md:text-sm font-semibold px-4 py-2 rounded-full shadow-xl border border-slate-200/90 flex items-center gap-2">
               <svg className="animate-spin h-3.5 w-3.5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              <span>Loading forecast...</span>
+              <span>{isModel ? "Loading forecast..." : "Loading sanitation records..."}</span>
             </div>
           </div>
         )}

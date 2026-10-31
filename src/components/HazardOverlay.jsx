@@ -118,7 +118,7 @@ export default function HazardOverlay({ mapRef, apiUrl, token, refreshKey, area,
     setter(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
   };
 
-  return <div className="absolute top-16 left-3 sm:top-20 sm:left-4 z-20 w-64 max-w-[calc(100%-5rem)] rounded-2xl border border-slate-200 bg-white/95 shadow-lg text-xs">
+  return <div className="absolute top-3 left-3 md:top-4 md:left-4 z-20 w-64 max-w-[calc(100%-5rem)] rounded-2xl border border-slate-200 bg-white/95 shadow-lg text-xs">
     <button type="button" role="switch" aria-checked={enabled} aria-controls="hazard-options"
       onClick={() => { setEnabled(value => !value); setSelected(null); }}
       className="flex w-full items-center justify-between gap-3 p-3 font-bold text-slate-800">

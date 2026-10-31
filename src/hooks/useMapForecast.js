@@ -12,6 +12,21 @@ export function useMapForecast(API_URL, records, barangay) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [today, setToday] = useState(manilaToday);
+  const [weather, setWeather] = useState(null);
+  useEffect(() => {
+    if (source !== "model") return;
+    const controller = new AbortController();
+    fetch(`${API_URL}/forecast/weather-timeline`, { signal: controller.signal })
+      .then(async (res) => {
+        const body = await res.json();
+        if (!res.ok || !body.success) throw new Error("Weather unavailable");
+        if (!controller.signal.aborted) setWeather({ today, days: body.data.days });
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setWeather(null);
+      });
+    return () => controller.abort();
+  }, [API_URL, source, today, attempt]);
   useEffect(() => {
     const timer = setInterval(() => setToday(manilaToday()), 60000);
     return () => clearInterval(timer);
@@ -62,6 +77,7 @@ export function useMapForecast(API_URL, records, barangay) {
     });
   }, [records, source, data]);
   return { source, setSource, day, setDay, dates, date, locations, loading, error,
+    weatherDays: weather?.today === today ? weather.days : [],
     saved: Boolean(data), updatedAt: data?.oldest_generated_at,
     staleCount: data?.stale_count || 0, availableCount: data?.results?.length || 0,
     unavailable: data?.unavailable_station_ids?.length || 0,
