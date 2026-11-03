@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ShieldAlert, X } from 'lucide-react';
 import { CATEGORIES, STUDY_LEGEND, filterHazardFeatures, featureBounds, sourceFeatures } from './hazardLayers';
 
 import { matchesBarangay, UNASSIGNED_BARANGAY } from '../utils/barangayScope';
@@ -8,6 +9,7 @@ const LAYERS = ['staff-hazard-fill', 'staff-hazard-line', 'staff-hazard-point', 
 
 export default function HazardOverlay({ mapRef, apiUrl, token, refreshKey, area, onAreaChange, barangays }) {
   const [enabled, setEnabled] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const [categories, setCategories] = useState(['natural']);
   const [natural, setNatural] = useState(['flood', 'landslide', 'coverage']);
   const [study, setStudy] = useState(null);
@@ -118,13 +120,69 @@ export default function HazardOverlay({ mapRef, apiUrl, token, refreshKey, area,
     setter(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id]);
   };
 
-  return <div className="absolute top-3 left-3 md:top-4 md:left-4 z-20 w-64 max-w-[calc(100%-5rem)] rounded-2xl border border-slate-200 bg-white/95 shadow-lg text-xs">
-    <button type="button" role="switch" aria-checked={enabled} aria-controls="hazard-options"
-      onClick={() => { setEnabled(value => !value); setSelected(null); }}
-      className="flex w-full items-center justify-between gap-3 p-3 font-bold text-slate-800">
-      Hazard map <span className={`rounded-full px-3 py-1 ${enabled ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}`}>{enabled ? 'ON' : 'OFF'}</span>
-    </button>
-    {enabled && <div id="hazard-options" className="max-h-[45vh] overflow-y-auto border-t border-slate-200 p-3 space-y-3">
+  if (!isOpen) {
+    return (
+      <div className="absolute top-3 left-3 z-20 transition-all rounded-2xl border border-slate-200/90 bg-white/95 backdrop-blur-md shadow-md text-xs w-auto">
+        <button
+          type="button"
+          onClick={() => {
+            if (!enabled) setEnabled(true);
+            setIsOpen(true);
+          }}
+          className="flex items-center gap-2 font-bold text-slate-800 px-3 py-1.5 cursor-pointer hover:bg-slate-50 rounded-2xl transition-colors"
+          title="Open hazard map controls"
+        >
+          <span className="flex items-center gap-1.5">
+            <ShieldAlert size={14} className={enabled ? "text-indigo-600" : "text-slate-500"} />
+            <span>Hazard map</span>
+          </span>
+          <span className={`rounded-full text-[10px] font-bold px-2 py-0.5 ${
+            enabled ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'
+          }`}>
+            {enabled ? 'ON' : 'OFF'}
+          </span>
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="absolute top-3 left-3 z-20 transition-all rounded-2xl border border-slate-200/90 bg-white/95 backdrop-blur-md shadow-xl text-xs w-72 max-w-[calc(100%-1.5rem)]">
+      {/* Container Header with ON/OFF switch and Close (X) button */}
+      <div className="flex items-center justify-between p-3 border-b border-slate-100">
+        <div className="flex items-center gap-1.5">
+          <ShieldAlert size={15} className={enabled ? "text-indigo-600" : "text-slate-400"} />
+          <span className="font-bold text-slate-900 text-xs">Hazard map</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            onClick={() => setEnabled((v) => !v)}
+            className={`rounded-full text-[10px] font-bold px-2.5 py-0.5 transition-colors cursor-pointer ${
+              enabled ? "bg-indigo-600 text-white hover:bg-indigo-700" : "bg-slate-200 text-slate-700 hover:bg-slate-300"
+            }`}
+            title={enabled ? "Turn hazard layer OFF" : "Turn hazard layer ON"}
+          >
+            {enabled ? "ON" : "OFF"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsOpen(false);
+              setSelected(null);
+            }}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            title="Close panel (keeps hazard map on)"
+            aria-label="Close hazard settings"
+          >
+            <X size={16} />
+          </button>
+        </div>
+      </div>
+
+      <div id="hazard-options" className="max-h-[50vh] overflow-y-auto p-3 space-y-3">
       <p className="font-semibold text-slate-800">Barangay hazards</p>
       <label className="block space-y-1">Hazard barangay
         <select aria-label="Hazard barangay" value={area} onChange={e => { onAreaChange(e.target.value); setSelected(null); }}
@@ -179,6 +237,7 @@ export default function HazardOverlay({ mapRef, apiUrl, token, refreshKey, area,
         {activeSelected.source_image && <p>Reference: {activeSelected.source_image}. {activeSelected.approximate ? 'Approximate image-derived boundary.' : 'Supplied GIS geometry.'}</p>}
         <p className="text-[10px]">{activeSelected.category === 'natural' ? 'Source: supplied Maasin_LandFlood map images' : 'Source: mapped hazard inventory; field verification required'}</p>
       </div>}
-    </div>}
-  </div>;
+    </div>
+  </div>
+  );
 }

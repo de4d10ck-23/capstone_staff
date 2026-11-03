@@ -1441,6 +1441,7 @@ const WaterSources = () => {
               : "Manage tested water stations, wells, taps, and laboratory metrics"}
           </p>
         </div>
+        {!isInspector && (
           <div className="flex flex-wrap items-center gap-2.5">
             <button
               type="button"
@@ -1451,7 +1452,6 @@ const WaterSources = () => {
               <ArchiveRestore size={16} className={archiveOpen ? "text-white" : "text-blue-600"} />
               <span>Archived Stations</span>
             </button>
-            {!isInspector && <>
             <button
               onClick={() => setIsSubmissionsModalOpen(true)}
               className="inline-flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 px-4 py-2.5 rounded-full text-xs font-semibold shadow-xs hover:shadow-md transition-all cursor-pointer relative"
@@ -1475,8 +1475,8 @@ const WaterSources = () => {
               <Plus size={16} />
               <span>Register New Station</span>
             </button>
-            </>}
           </div>
+        )}
       </div>
 
       {successMsg && (
@@ -1501,19 +1501,20 @@ const WaterSources = () => {
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+        <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:items-center sm:gap-3 sm:w-auto">
           {isBrgyOfficial ? (
-            <div className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl text-xs font-semibold text-blue-900">
-              <MapPin size={13} className="text-blue-600" />
-              <span>Brgy. {userBarangay}</span>
+            <div className="flex items-center justify-center sm:justify-start gap-1.5 px-3 py-2 bg-blue-50 border border-blue-200 rounded-xl text-xs font-semibold text-blue-900 w-full sm:w-auto min-w-0">
+              <MapPin size={13} className="text-blue-600 shrink-0" />
+              <span className="truncate">Brgy. {userBarangay}</span>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 font-medium">Barangay:</span>
+            <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
+              <span className="hidden sm:inline text-xs text-slate-500 font-medium shrink-0">Barangay:</span>
               <select
+                aria-label="Filter by barangay"
                 value={selectedBarangay}
                 onChange={(e) => setSelectedBarangay(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none"
+                className="w-full sm:w-auto px-2.5 sm:px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none truncate"
               >
                 <option value="all">All Barangays</option>
                 {barangays.map((b) => (
@@ -1523,12 +1524,13 @@ const WaterSources = () => {
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-medium">Status:</span>
+          <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
+            <span className="hidden sm:inline text-xs text-slate-500 font-medium shrink-0">Status:</span>
             <select
+              aria-label="Filter by status"
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none"
+              className="w-full sm:w-auto px-2.5 sm:px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium text-slate-800 focus:outline-none truncate"
             >
               <option value="all">All Statuses</option>
               <option value="safe">Safe Only</option>
@@ -1540,7 +1542,7 @@ const WaterSources = () => {
         </div>
       </div>
 
-      {archiveOpen ? (
+      {archiveOpen && !isInspector ? (
         <section className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-100">
             <h2 className="font-bold text-slate-900">Archived water sources</h2>
@@ -1556,7 +1558,7 @@ const WaterSources = () => {
               {archiveLoading ? <tr><td colSpan={5} className="p-8 text-center text-slate-500">Loading archive...</td></tr>
                 : archivedSources.length === 0 ? <tr><td colSpan={5} className="p-8 text-center text-slate-500">No archived stations.</td></tr>
                 : archivedSources.map((source) => <tr key={source.id}>
-                  <td className="px-6 py-4 font-semibold text-slate-900">{source.full_name || source.name}</td>
+                  <td className="px-6 py-4 font-semibold text-slate-900 max-w-[160px] sm:max-w-xs truncate" title={source.full_name || source.name}>{source.full_name || source.name}</td>
                   <td className="px-6 py-4 text-slate-600">Brgy. {source.barangay}</td>
                   <td className="px-6 py-4 capitalize text-slate-600">{source.status || "Unknown"}</td>
                   <td className="px-6 py-4 text-slate-600">{source.archived_at ? new Date(source.archived_at).toLocaleString("en-PH", { timeZone: "Asia/Manila" }) : ""}<span className="block text-slate-400">{source.archived_by_name || "Staff"}</span></td>
@@ -1606,9 +1608,9 @@ const WaterSources = () => {
 
                   return (
                     <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-4 px-6 font-bold text-slate-900">
-                        <div className="flex items-center gap-2">
-                          <span>{s.name || s.full_name}</span>
+                      <td className="py-4 px-6 font-bold text-slate-900 max-w-[180px] sm:max-w-xs">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="truncate" title={s.name || s.full_name}>{s.name || s.full_name}</span>
                           {(() => {
                             const photos = parseLocationPhotos(s);
                             if (photos.length === 0) return null;
@@ -1896,17 +1898,17 @@ const WaterSources = () => {
                   </div>
 
                   {/* Floating Boundary Badge & Focus Button on bottom-left of map */}
-                  <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl text-slate-800 text-xs font-medium shadow-lg border border-slate-200/90 flex items-center gap-2.5 z-10">
-                    <span className="w-3.5 h-3.5 rounded-full bg-sky-500/20 border-2 border-sky-600 flex items-center justify-center">
+                  <div className="absolute bottom-3 left-3 max-w-[calc(100%-1.5rem)] bg-white/95 backdrop-blur-md px-3 py-1.5 rounded-xl text-slate-800 text-xs font-medium shadow-lg border border-slate-200/90 flex items-center gap-2.5 z-10 min-w-0">
+                    <span className="w-3.5 h-3.5 rounded-full bg-sky-500/20 border-2 border-sky-600 flex items-center justify-center flex-shrink-0">
                       <span className="w-1.5 h-1.5 rounded-full bg-sky-600"></span>
                     </span>
-                    <span className="font-semibold text-slate-700">
+                    <span className="font-semibold text-slate-700 truncate">
                       Barangay {formData.barangay || userBarangay} Boundary
                     </span>
                     <button
                       type="button"
                       onClick={handleFitToBoundary}
-                      className="ml-1 px-2.5 py-0.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[11px] font-bold border border-sky-200 transition-colors flex items-center gap-1 cursor-pointer"
+                      className="ml-1 px-2.5 py-0.5 rounded-lg bg-sky-50 hover:bg-sky-100 text-sky-700 text-[11px] font-bold border border-sky-200 transition-colors flex items-center gap-1 cursor-pointer flex-shrink-0"
                       title="Focus view on designated barangay boundary"
                     >
                       <Maximize2 size={11} />
@@ -2319,12 +2321,12 @@ const WaterSources = () => {
                   return (
                     <div
                       key={sub.id}
-                      className="p-5 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-md transition-shadow flex flex-col sm:flex-row gap-4 justify-between items-start"
+                      className="p-4 sm:p-5 rounded-2xl border border-slate-200 bg-white shadow-xs hover:shadow-md transition-shadow flex flex-col sm:flex-row gap-4 justify-between items-start overflow-hidden"
                     >
-                      <div className="space-y-2 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm font-bold text-slate-900">{sub.title || "Water Source"}</h3>
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      <div className="space-y-2 min-w-0 w-full flex-1">
+                        <div className="flex flex-wrap items-center gap-2 min-w-0">
+                          <h3 className="text-sm font-bold text-slate-900 truncate max-w-full" title={sub.title || "Water Source"}>{sub.title || "Water Source"}</h3>
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider flex-shrink-0 ${
                             isPending
                               ? "bg-amber-100 text-amber-800 border border-amber-200"
                               : isDone
@@ -2341,7 +2343,7 @@ const WaterSources = () => {
                             <span>Brgy. {sub.barangay}</span>
                           </div>
 
-                          <div className="font-mono text-[11px] bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200 text-slate-700">
+                          <div className="font-mono text-[11px] bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200 text-slate-700 truncate max-w-full">
                             Lat: {parseFloat(sub.latitude || 0).toFixed(6)}, Lng: {parseFloat(sub.longitude || 0).toFixed(6)}
                           </div>
 
@@ -2354,13 +2356,13 @@ const WaterSources = () => {
                         </div>
 
                         {desc && (
-                          <p className="text-xs text-slate-600 leading-relaxed bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
+                          <p className="text-xs text-slate-600 leading-relaxed bg-slate-50/80 p-2.5 rounded-xl border border-slate-100 truncate" title={desc}>
                             {desc}
                           </p>
                         )}
 
                         {sub.reason && (
-                          <p className="text-xs italic text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-200">
+                          <p className="text-xs italic text-slate-500 bg-slate-50 p-2 rounded-lg border border-slate-200 truncate" title={sub.reason}>
                             <strong>Note:</strong> {sub.reason}
                           </p>
                         )}

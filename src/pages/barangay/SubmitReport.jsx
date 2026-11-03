@@ -140,15 +140,15 @@ export default function SubmitReport() {
     }
   };
 
-  const inputClass = "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600";
+  const inputClass = "w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 truncate";
   return (
     <div className="max-w-4xl mx-auto space-y-6 animate-fade-in font-sans">
-      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-8 text-white shadow-xl">
-        <div className="flex items-center gap-3 mb-2">
-          <MessageSquare size={24} className="text-cyan-300" />
-          <h1 className="text-2xl sm:text-3xl font-extrabold">Submit Concern</h1>
+      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-5 sm:p-8 text-white shadow-xl overflow-hidden">
+        <div className="flex items-center gap-3 mb-2 min-w-0">
+          <MessageSquare size={24} className="text-cyan-300 flex-shrink-0" />
+          <h1 className="text-xl sm:text-3xl font-extrabold truncate">Submit Concern</h1>
         </div>
-        <p className="text-white/80 text-sm">Submit a water-source concern or inspection request from Barangay {user?.barangay} to the City Health Unit and sanitation inspectors.</p>
+        <p className="text-white/80 text-xs sm:text-sm">Submit a water-source concern or inspection request from Barangay {user?.barangay} to the City Health Unit and sanitation inspectors.</p>
       </div>
       {success && <div role="status" className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm flex gap-3"><CheckCircle2 size={20} className="shrink-0" />{success}</div>}
       {error && <div role="alert" className="p-5 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-sm flex gap-3"><AlertCircle size={20} className="shrink-0" />{error}</div>}

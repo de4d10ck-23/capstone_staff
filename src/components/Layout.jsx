@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Outlet, NavLink } from 'react-router-dom';
+import { Outlet, NavLink, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import StaffPushAlerts, { unlinkStaffPush } from './StaffPushAlerts';
 import usePendingReportCount from '../hooks/usePendingReportCount';
@@ -24,6 +24,8 @@ import {
 } from 'lucide-react';
 
 const Layout = () => {
+  const location = useLocation();
+  const isMap = location.pathname === '/map';
   const { user, logout, token, API_URL } = useAuth();
   const signOut = async () => {
     try { await unlinkStaffPush(API_URL, token); } finally { logout(); }
@@ -200,11 +202,11 @@ const Layout = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between flex-shrink-0 z-10">
-          <div className="flex items-center gap-3">
+        <header className="h-16 bg-white/95 backdrop-blur-md border-b border-slate-200 px-4 sm:px-8 flex items-center justify-between gap-2 flex-shrink-0 z-10">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             <button
               onClick={() => setMobileOpen(true)}
-              className="lg:hidden p-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100"
+              className="lg:hidden p-2 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 flex-shrink-0"
               aria-label="Open Navigation Menu"
             >
               <Menu size={20} />
@@ -214,7 +216,7 @@ const Layout = () => {
           <StaffPushAlerts apiUrl={API_URL} token={token} userId={user?.id} />
         </header>
         
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <main className={`flex-1 min-h-0 ${isMap ? "p-0 overflow-hidden" : "overflow-y-auto overflow-x-hidden p-4 sm:p-6 lg:p-8"}`}>
           <Outlet />
         </main>
       </div>

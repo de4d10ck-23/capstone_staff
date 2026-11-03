@@ -120,7 +120,7 @@ const Alerts = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left Column: Broadcast Form */}
-        <div className="lg:col-span-5 bg-white rounded-3xl p-8 border border-slate-200/80 shadow-sm space-y-6">
+        <div className="lg:col-span-5 bg-white rounded-3xl p-5 sm:p-8 border border-slate-200/80 shadow-sm space-y-6">
           <div className="flex items-center gap-2">
             <Radio size={20} className="text-blue-600" />
             <h2 className="text-base font-bold text-slate-900">Issue New Advisory</h2>
@@ -212,7 +212,7 @@ const Alerts = () => {
         </div>
 
         {/* Right Column: Live Broadcast History */}
-        <div className="lg:col-span-7 bg-white rounded-3xl p-8 border border-slate-200/80 shadow-sm space-y-4">
+        <div className="lg:col-span-7 bg-white rounded-3xl p-5 sm:p-8 border border-slate-200/80 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bell size={20} className="text-blue-600" />
@@ -282,8 +282,8 @@ const Alerts = () => {
                           </span>
                         </div>
 
-                        <h4 className="font-bold text-sm text-slate-900 leading-snug">{n.title}</h4>
-                        <p className="text-xs text-slate-600 leading-relaxed break-words">{n.message}</p>
+                        <h4 className="font-bold text-sm text-slate-900 leading-snug truncate" title={n.title}>{n.title}</h4>
+                        <p className="text-xs text-slate-600 leading-relaxed line-clamp-2 break-words" title={n.message}>{n.message}</p>
                       </div>
 
                       <button

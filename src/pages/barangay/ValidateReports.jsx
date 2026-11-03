@@ -164,20 +164,20 @@ const ValidateReports = () => {
   return (
     <div className="space-y-8 animate-fade-in font-sans">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div className="space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
+      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-5 sm:p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 overflow-hidden">
+        <div className="space-y-2 min-w-0 w-full flex-1">
+          <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 block">
             Barangay Governance & Triage
           </span>
-          <h1 className="text-3xl font-extrabold text-white">Validate Citizen Reports & Concerns</h1>
-          <p className="text-white/80 text-sm max-w-xl">
+          <h1 className="text-xl sm:text-3xl font-extrabold text-white">Validate Citizen Reports & Concerns</h1>
+          <p className="text-white/80 text-xs sm:text-sm max-w-xl">
             Review incoming water quality complaints and contamination concerns. Validate incoming reports, and forward validated cases directly to CHU (City Health Unit) for field audits. New water source submissions are reviewed in the Water Sources Registry.
           </p>
         </div>
 
         <button
           onClick={fetchReports}
-          className="px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/30 text-white font-semibold text-xs transition-all flex items-center gap-2 cursor-pointer"
+          className="px-4 py-2.5 rounded-full bg-white/10 hover:bg-white/20 border border-white/30 text-white font-semibold text-xs transition-all flex items-center gap-2 cursor-pointer shrink-0"
         >
           <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
           <span>Refresh Queue</span>
@@ -196,10 +196,10 @@ const ValidateReports = () => {
 
       {/* Filter Tabs */}
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-wrap gap-1.5 sm:gap-2 items-center">
           <button
             onClick={() => setStatusFilter("pending")}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               statusFilter === "pending"
                 ? "bg-amber-600 text-white shadow-sm"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
@@ -213,7 +213,7 @@ const ValidateReports = () => {
 
           <button
             onClick={() => setStatusFilter("validated")}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               statusFilter === "validated"
                 ? "bg-emerald-600 text-white shadow-sm"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
@@ -227,7 +227,7 @@ const ValidateReports = () => {
 
           <button
             onClick={() => setStatusFilter("escalated")}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               statusFilter === "escalated"
                 ? "bg-purple-700 text-white shadow-sm"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
@@ -239,13 +239,13 @@ const ValidateReports = () => {
             }`}>{escalatedCount}</span>
           </button>
           <button onClick={() => setStatusFilter("processing")}
-            className={`px-4 py-2 rounded-xl border text-xs font-semibold ${statusFilter === "processing" ? "bg-cyan-700 text-white" : "bg-white text-cyan-800 border-cyan-200"}`}>
+            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl border text-xs font-semibold whitespace-nowrap ${statusFilter === "processing" ? "bg-cyan-700 text-white" : "bg-white text-cyan-800 border-cyan-200"}`}>
             Processing <span className="ml-1">{processingCount}</span>
           </button>
 
           <button
             onClick={() => setStatusFilter("all")}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
               statusFilter === "all"
                 ? "bg-slate-800 text-white shadow-sm"
                 : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
@@ -261,7 +261,7 @@ const ValidateReports = () => {
         {/* History Tab - Right Side Corner */}
         <button
           onClick={() => setStatusFilter("done")}
-          className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 ml-auto sm:ml-0 ${
+          className={`px-3 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ml-auto sm:ml-0 ${
             statusFilter === "done"
               ? "bg-blue-600 text-white shadow-sm"
               : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
@@ -314,16 +314,91 @@ const ValidateReports = () => {
         </div>
       )}
 
-      {/* Main Reports Table */}
+      {/* Main Reports Table & Cards */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 flex justify-between items-center">
+        <div className="p-4 sm:p-6 border-b border-slate-100 flex justify-between items-center">
           <h3 className="font-bold text-sm text-slate-900">
             Citizen Concerns & Submissions ({filteredReports.length})
           </h3>
-          <span className="text-xs text-slate-400">Barangay {user?.barangay || "Jurisdiction"}</span>
+          <span className="text-xs text-slate-400">Brgy. {user?.barangay || "Jurisdiction"}</span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobile Card List (< md) */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="text-center py-12 text-slate-400 text-xs">Loading resident reports...</div>
+          ) : filteredReports.length === 0 ? (
+            <div className="text-center py-12 text-slate-400 text-xs">
+              No reports match the selected filter.
+            </div>
+          ) : (
+            filteredReports.map((r) => {
+              const isPending = !r.status || r.status === "pending";
+              const isValidated = r.status === "validated";
+              const isDone = r.status === "done" || r.status === "resolved" || r.status === "completed";
+              const isDismissed = r.status === "dismissed" || r.status === "rejected";
+              const isProcessing = ["in_progress", "processing", "assigned"].includes(r.status);
+              const isEscalated = r.status === "escalated" || r.status === "passed_to_chu";
+              const displayDesc = cleanDesc(r) || r.description;
+
+              return (
+                <div key={r.id} className="p-4 space-y-2.5 hover:bg-slate-50/60 transition-colors">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-slate-900 text-sm break-words">{r.title}</p>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1 text-[11px] text-slate-500">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 capitalize border border-slate-200 whitespace-nowrap">
+                          {(r.type || r.category || "Concern").replace(/_/g, " ")}
+                        </span>
+                        <span>• Brgy. {r.barangay}</span>
+                        <span className="text-slate-400">• {r.created_at ? new Date(r.created_at).toLocaleDateString() : "Recent"}</span>
+                      </div>
+                    </div>
+                    <span className={`shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap inline-flex items-center ${
+                      isPending
+                        ? "bg-amber-100 text-amber-800 border border-amber-200"
+                        : isValidated
+                        ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                        : isDone
+                        ? "bg-blue-100 text-blue-800 border border-blue-200"
+                        : isDismissed
+                        ? "bg-rose-100 text-rose-800 border border-rose-200"
+                        : isEscalated
+                        ? "bg-purple-100 text-purple-800 border border-purple-200"
+                        : "bg-slate-100 text-slate-700 border border-slate-200"
+                    }`}>
+                      {isProcessing ? "Processing" : isEscalated ? "Passed to CHU" : isValidated ? "Validated" : isDone ? "Done" : isDismissed ? "Dismissed" : "Pending Review"}
+                    </span>
+                  </div>
+
+                  {displayDesc && (
+                    <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed bg-slate-50/80 p-2.5 rounded-xl border border-slate-100">
+                      {displayDesc}
+                    </p>
+                  )}
+                  {r.reason && (
+                    <p className="text-[11px] text-slate-500 italic">
+                      Note: {r.reason}
+                    </p>
+                  )}
+
+                  <div className="flex items-center justify-end pt-1">
+                    <button
+                      onClick={() => setDetailReport(r)}
+                      className="w-full sm:w-auto px-4 py-2 rounded-xl border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-700 bg-white hover:bg-blue-50 font-semibold text-xs transition-colors inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <Eye size={13} />
+                      <span>View Details</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Desktop Table View (>= md) */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider border-b border-slate-100">
               <tr>
@@ -359,32 +434,32 @@ const ValidateReports = () => {
 
                   return (
                     <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-4 px-6">
-                        <p className="font-bold text-slate-900 text-sm">{r.title}</p>
-                        <p className="text-[11px] text-slate-500 mt-0.5">Brgy. {r.barangay}</p>
+                      <td className="py-4 px-6 max-w-[180px] sm:max-w-xs">
+                        <p className="font-bold text-slate-900 text-sm truncate" title={r.title}>{r.title}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5 truncate">Brgy. {r.barangay}</p>
                       </td>
 
                       <td className="py-4 px-6">
-                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 capitalize border border-slate-200">
+                        <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 capitalize border border-slate-200 whitespace-nowrap inline-block">
                           {(r.type || r.category || "Concern").replace(/_/g, " ")}
                         </span>
                       </td>
 
-                      <td className="py-4 px-6 text-slate-600 max-w-sm">
-                        <p className="leading-relaxed truncate max-w-xs">{displayDesc}</p>
+                      <td className="py-4 px-6 text-slate-600 max-w-[180px] sm:max-w-sm">
+                        <p className="leading-relaxed truncate" title={displayDesc}>{displayDesc}</p>
                         {r.reason && (
-                          <p className="text-[11px] text-slate-500 mt-1 italic">
+                          <p className="text-[11px] text-slate-500 mt-1 italic truncate" title={r.reason}>
                             Note: {r.reason}
                           </p>
                         )}
                       </td>
 
-                      <td className="py-4 px-6 text-slate-500">
+                      <td className="py-4 px-6 text-slate-500 whitespace-nowrap">
                         {r.created_at ? new Date(r.created_at).toLocaleDateString() : "Recent"}
                       </td>
 
-                      <td className="py-4 px-6">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                      <td className="py-4 px-6 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap inline-flex items-center ${
                           isPending
                             ? "bg-amber-100 text-amber-800 border border-amber-200"
                             : isValidated
@@ -401,7 +476,7 @@ const ValidateReports = () => {
                         </span>
                       </td>
 
-                      <td className="py-4 px-6 text-right">
+                      <td className="py-4 px-6 text-right whitespace-nowrap">
                         <button
                           onClick={() => setDetailReport(r)}
                           className="px-3.5 py-1.5 rounded-lg border border-slate-200 hover:border-blue-400 text-slate-700 hover:text-blue-700 bg-white hover:bg-blue-50 font-semibold text-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-sm"
@@ -417,7 +492,6 @@ const ValidateReports = () => {
               )}
             </tbody>
           </table>
-
         </div>
       </div>
 

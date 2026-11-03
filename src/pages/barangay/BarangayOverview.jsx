@@ -47,16 +47,16 @@ const BarangayOverview = () => {
 
   return (
     <div className="space-y-8 animate-fade-in font-sans">
-      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div>
-          <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">Barangay Official Station</span>
-          <h1 className="text-3xl font-extrabold text-white">Barangay {user?.barangay || "Jurisdiction"}</h1>
-          <p className="text-white/80 text-sm max-w-xl">
+      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-5 sm:p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 overflow-hidden">
+        <div className="min-w-0 w-full flex-1">
+          <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 block truncate">Barangay Official Station</span>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white truncate">Barangay {user?.barangay || "Jurisdiction"}</h1>
+          <p className="text-white/80 text-xs sm:text-sm max-w-xl">
             Monitor local drinking supplies, validate incoming citizen reports, and escalate concerns directly to the City Health Officer.
           </p>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <Link
             to="/validate-reports"
             className="px-5 py-2.5 rounded-full bg-white text-blue-900 font-semibold text-xs transition-all shadow hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-1.5"
@@ -138,8 +138,8 @@ const BarangayOverview = () => {
                     const hasEColi = Boolean(s.e_coli || (s.e_coli_count && Number(s.e_coli_count) > 0) || s.status === "undrinkable");
                     return (
                       <tr key={s.id}>
-                        <td className="py-3 px-4 font-bold text-slate-900">{s.name}</td>
-                        <td className="py-3 px-4 text-slate-600 capitalize">{s.source_type || "Well"}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900 max-w-[160px] sm:max-w-xs truncate" title={s.name}>{s.name}</td>
+                        <td className="py-3 px-4 text-slate-600 capitalize max-w-[120px] truncate" title={s.source_type || "Well"}>{s.source_type || "Well"}</td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                             s.status === "safe" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
@@ -181,12 +181,12 @@ const BarangayOverview = () => {
               <p className="text-slate-400 text-center py-6">No recent concerns logged by residents.</p>
             ) : (
               concerns.slice(0, 4).map((c) => (
-                <div key={c.id} className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                  <div className="flex justify-between">
-                    <span className="font-bold text-slate-900">{c.title}</span>
-                    <span className="text-[10px] text-slate-400 capitalize">{c.status || "Pending"}</span>
+                <div key={c.id} className="p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1 overflow-hidden">
+                  <div className="flex justify-between items-center gap-2 min-w-0">
+                    <span className="font-bold text-slate-900 truncate min-w-0 flex-1" title={c.title}>{c.title}</span>
+                    <span className="text-[10px] text-slate-400 capitalize flex-shrink-0">{c.status || "Pending"}</span>
                   </div>
-                  <p className="text-slate-500 text-[11px] truncate">{c.description}</p>
+                  <p className="text-slate-500 text-[11px] truncate" title={c.description}>{c.description}</p>
                 </div>
               ))
             )}

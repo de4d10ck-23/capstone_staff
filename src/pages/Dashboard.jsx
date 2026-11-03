@@ -130,17 +130,17 @@ const Dashboard = () => {
     return (
       <div className="space-y-8 animate-fade-in font-sans">
         {/* Banner */}
-        <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
+        <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-5 sm:p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 overflow-hidden">
+          <div className="space-y-1.5 min-w-0 w-full flex-1">
+            <div className="flex flex-wrap items-center gap-2 min-w-0">
+              <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 truncate">
                 Barangay Official Station
               </span>
               <span className="text-xs text-white/50">•</span>
-              <span className="text-xs text-white/80 font-medium">Welcome, {user?.full_name}</span>
+              <span className="text-xs text-white/80 font-medium truncate">Welcome, {user?.full_name}</span>
             </div>
-            <h1 className="text-3xl font-extrabold text-white">Barangay {user?.barangay || "Jurisdiction"}</h1>
-            <p className="text-white/80 text-sm max-w-xl">
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white truncate">Barangay {user?.barangay || "Jurisdiction"}</h1>
+            <p className="text-white/80 text-xs sm:text-sm max-w-xl">
               Monitor local drinking supplies, validate citizen reports, and submit official assessments directly to the City Health Officer.
             </p>
           </div>
@@ -247,8 +247,8 @@ const Dashboard = () => {
                       const hasEColi = Boolean(s.e_coli || (s.e_coli_count && Number(s.e_coli_count) > 0) || s.status === "undrinkable");
                       return (
                         <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="py-3 px-4 font-bold text-slate-900">{s.name}</td>
-                          <td className="py-3 px-4 text-slate-600 capitalize">{s.source_type || "Deep Well"}</td>
+                          <td className="py-3 px-4 font-bold text-slate-900 max-w-[160px] sm:max-w-xs truncate" title={s.name}>{s.name}</td>
+                          <td className="py-3 px-4 text-slate-600 capitalize max-w-[120px] truncate" title={s.source_type || "Deep Well"}>{s.source_type || "Deep Well"}</td>
                           <td className="py-3 px-4">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
@@ -329,8 +329,8 @@ const Dashboard = () => {
                         {c.status || "Pending"}
                       </span>
                     </div>
-                    <div>
-                      <p className="font-bold text-slate-900 text-xs group-hover:text-blue-700 transition-colors line-clamp-1">
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 text-xs group-hover:text-blue-700 transition-colors truncate" title={c.title}>
                         {c.title}
                       </p>
                     </div>
@@ -353,26 +353,26 @@ const Dashboard = () => {
   return (
     <div className="space-y-8 animate-fade-in font-sans">
       {/* Banner */}
-      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div className="space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
+      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-5 sm:p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 overflow-hidden">
+        <div className="space-y-2 min-w-0 w-full flex-1">
+          <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 block truncate">
             {getRoleDisplayName(user?.role)} • Active Duty
           </span>
-          <h1 className="text-3xl font-extrabold text-white">Welcome, {user?.full_name}</h1>
-          <p className="text-white/80 text-sm max-w-xl">
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-white truncate">Welcome, {user?.full_name}</h1>
+          <p className="text-white/80 text-xs sm:text-sm max-w-xl">
             {isInspector && "Review assigned field inspection orders and log water laboratory testing samples."}
             {isCHO && "Review and verify water surveillance inspection reports compiled by Sanitization Inspectors."}
           </p>
         </div>
 
         <div className="flex flex-wrap gap-3">
-          {isInspector && (
+          {(isInspector || user?.role === 'admin') && (
             <Link
-              to="/add-water-source"
+              to="/inspections"
               className="px-5 py-2.5 rounded-full bg-cyan-400 hover:bg-cyan-300 text-slate-900 font-semibold text-xs transition-all shadow hover:shadow-lg hover:-translate-y-0.5 flex items-center gap-1.5"
             >
-              <PlusCircle size={16} />
-              <span>Add Water Station</span>
+              <ClipboardList size={16} />
+              <span>View Reports</span>
             </Link>
           )}
           {isCHO && (
@@ -474,9 +474,9 @@ const Dashboard = () => {
                 ) : (
                   reports.slice(0, 5).map((r) => (
                     <tr key={r.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2">
+                      <td className="py-3.5 px-4 font-bold text-slate-900 flex items-center gap-2 max-w-[180px] sm:max-w-xs">
                         <FileText size={15} className="text-blue-600 flex-shrink-0" />
-                        <span>{r.title}</span>
+                        <span className="truncate" title={r.title}>{r.title}</span>
                       </td>
                       <td className="py-3.5 px-4 text-slate-700 font-medium">
                         {r.barangay ? `Brgy. ${r.barangay}` : "City Wide"}

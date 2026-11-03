@@ -822,17 +822,17 @@ const EndorsedReports = () => {
                   return (
                     <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
                       {/* Title & Description */}
-                      <td className="py-4 px-6 max-w-xs">
-                        <div className="space-y-1">
-                          <div className="flex items-center gap-2">
-                            <p className="font-bold text-slate-900 text-sm truncate">{item.title}</p>
+                      <td className="py-4 px-6 max-w-[180px] sm:max-w-xs">
+                        <div className="space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <p className="font-bold text-slate-900 text-sm truncate" title={item.title}>{item.title}</p>
                             {item.photoUrl && (
-                              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200">
+                              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200 flex-shrink-0">
                                 Proof 📷
                               </span>
                             )}
                           </div>
-                          <p className="text-slate-500 text-xs line-clamp-2 leading-relaxed">
+                          <p className="text-slate-500 text-xs truncate leading-relaxed" title={item.cleanDesc || item.description}>
                             {item.cleanDesc || item.description}
                           </p>
                           <div className="flex items-center gap-2 text-[10px] text-slate-400 pt-0.5">

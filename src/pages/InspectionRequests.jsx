@@ -362,13 +362,13 @@ const InspectionRequests = () => {
   return (
     <div className="space-y-8 animate-fade-in font-sans">
       {/* Header Banner */}
-      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div className="space-y-2">
-          <span className="text-xs font-bold uppercase tracking-wider text-cyan-300">
+      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-5 sm:p-8 text-white shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-6 overflow-hidden">
+        <div className="space-y-2 min-w-0 w-full flex-1">
+          <span className="text-xs font-bold uppercase tracking-wider text-cyan-300 block truncate">
             Field Operations & Sampling
           </span>
-          <h1 className="text-3xl font-extrabold text-white">CHU Reports & Inspections</h1>
-          <p className="text-white/80 text-sm max-w-xl">
+          <h1 className="text-xl sm:text-3xl font-extrabold text-white truncate">CHU Reports & Inspections</h1>
+          <p className="text-white/80 text-xs sm:text-sm max-w-xl">
             Review forwarded concerns and water sources in one queue. Start Processing, record findings, then mark Done. Status updates are shared with barangay officials and residents.
           </p>
         </div>
@@ -482,19 +482,21 @@ const InspectionRequests = () => {
 
                   return (
                     <tr key={i.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-4 px-6">
-                        <p className="font-bold text-slate-900 text-sm">{i.title}</p>
-                        <p className="text-slate-500 mt-1">Brgy. {i.barangay} | {i.category?.replace(/_/g, " ")}</p>
+                      <td className="py-4 px-6 max-w-[180px] sm:max-w-xs">
+                        <p className="font-bold text-slate-900 text-sm truncate" title={i.title}>{i.title}</p>
+                        <p className="text-slate-500 mt-1 truncate">Brgy. {i.barangay} | {i.category?.replace(/_/g, " ")}</p>
                         {(i.latitude || i.longitude) && (
-                          <div className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 mt-1 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                            <MapPin size={10} />
-                            <span>GPS: {parseFloat(i.latitude).toFixed(4)}, {parseFloat(i.longitude).toFixed(4)}</span>
+                          <div className="inline-flex items-center gap-1 text-[10px] font-mono text-blue-600 mt-1 bg-blue-50 px-2 py-0.5 rounded border border-blue-200 max-w-full truncate">
+                            <MapPin size={10} className="flex-shrink-0" />
+                            <span className="truncate">GPS: {parseFloat(i.latitude).toFixed(4)}, {parseFloat(i.longitude).toFixed(4)}</span>
                           </div>
                         )}
                       </td>
 
-                      <td className="py-4 px-6 text-slate-700 max-w-xs leading-relaxed font-medium">
-                        {cleanDescription(i) || i.description}
+                      <td className="py-4 px-6 text-slate-700 max-w-[180px] sm:max-w-xs leading-relaxed font-medium">
+                        <p className="truncate" title={cleanDescription(i) || i.description}>
+                          {cleanDescription(i) || i.description}
+                        </p>
                       </td>
 
                       <td className="py-4 px-6">
@@ -512,9 +514,9 @@ const InspectionRequests = () => {
                         </span>
                       </td>
 
-                      <td className="py-4 px-6 text-slate-600 max-w-xs">
+                      <td className="py-4 px-6 text-slate-600 max-w-[180px] sm:max-w-xs">
                         {i.notes ? (
-                          <p className="text-slate-800 italic text-[11px] leading-relaxed">
+                          <p className="text-slate-800 italic text-[11px] leading-relaxed truncate" title={i.notes}>
                             "{i.notes}"
                           </p>
                         ) : (
@@ -556,9 +558,9 @@ const InspectionRequests = () => {
           <div className="bg-white rounded-3xl max-w-xl w-full p-6 sm:p-7 shadow-2xl border border-slate-100 relative animate-fade-in space-y-5 my-8 max-h-[90vh] overflow-y-auto">
             <ErrorNotice error={errorMsg} />
             {/* Modal Header */}
-            <div className="flex justify-between items-start pb-3 border-b border-slate-100">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
+            <div className="flex justify-between items-start gap-3 pb-3 border-b border-slate-100">
+              <div className="space-y-1 min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
                     Field Inspection Ticket
                   </span>
@@ -576,11 +578,11 @@ const InspectionRequests = () => {
                       : selectedInspection.status === "cancelled" ? "Dismissed" : "Pending Review"}
                   </span>
                 </div>
-                <h2 className="text-xl font-extrabold text-slate-900">
+                <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 truncate">
                   Brgy. {selectedInspection.barangay} Inspection
                 </h2>
-                <p className="text-xs font-semibold text-blue-700">Category: {categoryTitle(selectedInspection.category)}</p>
-                {selectedInspection.title && <p className="text-sm font-medium text-slate-800">{selectedInspection.title}</p>}
+                <p className="text-xs font-semibold text-blue-700 truncate">Category: {categoryTitle(selectedInspection.category)}</p>
+                {selectedInspection.title && <p className="text-sm font-medium text-slate-800 break-words">{selectedInspection.title}</p>}
                 <p className="text-xs text-slate-500">
                   Requested on {selectedInspection.created_at ? new Date(selectedInspection.created_at).toLocaleDateString() : "Recent"}
                 </p>
@@ -674,9 +676,9 @@ const InspectionRequests = () => {
                         Selected Source
                       </span>
                     </label>
-                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs">
-                      <div className="space-y-0.5">
-                        <p className="font-bold text-slate-900 text-xs">
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl flex items-center justify-between gap-3 shadow-2xs overflow-hidden">
+                      <div className="space-y-0.5 min-w-0 flex-1">
+                        <p className="font-bold text-slate-900 text-xs truncate" title={matchedWaterSource?.full_name || matchedWaterSource?.name || "No registered source selected"}>
                           {matchedWaterSource?.full_name || matchedWaterSource?.name || "No registered source selected"}
                         </p>
                         <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono">

@@ -59,12 +59,12 @@ const EscalateConcern = () => {
 
   return (
     <div className="max-w-3xl mx-auto space-y-8 animate-fade-in font-sans">
-      <div className="bg-gradient-to-r from-red-900 via-rose-900 to-amber-900 rounded-3xl p-8 text-white shadow-xl">
-        <div className="flex items-center gap-3 mb-2">
-          <AlertOctagon size={26} className="text-red-300" />
-          <h1 className="text-3xl font-extrabold text-white">Emergency Incident Escalation</h1>
+      <div className="bg-gradient-to-r from-red-900 via-rose-900 to-amber-900 rounded-3xl p-5 sm:p-8 text-white shadow-xl overflow-hidden">
+        <div className="flex items-center gap-3 mb-2 min-w-0">
+          <AlertOctagon size={26} className="text-red-300 flex-shrink-0" />
+          <h1 className="text-xl sm:text-3xl font-extrabold text-white truncate">Emergency Incident Escalation</h1>
         </div>
-        <p className="text-white/80 text-sm max-w-xl">
+        <p className="text-white/80 text-xs sm:text-sm max-w-xl">
           Trigger high-priority alerts to the City Health Officer for immediate investigation of suspected waterborne disease outbreaks, acute gastroenteritis, or severe toxic runoff.
         </p>
       </div>

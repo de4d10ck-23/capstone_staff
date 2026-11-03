@@ -9,10 +9,11 @@ import {
   Eye,
   EyeOff,
   Search,
+  Activity,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useMapForecast } from "../hooks/useMapForecast";
-import MapForecastControls, { riskLabel } from "../components/MapForecastControls";
+import { riskLabel } from "../components/MapForecastControls";
 import { getBarangayPopulation } from "../constants/barangays";
 import HazardOverlay from "../components/HazardOverlay";
 import maasinBarangays from "../data/maasin_barangays.json";
@@ -430,94 +431,131 @@ const WaterMap = () => {
   if (selectedBarangay !== 'all' && selectedBarangay !== UNASSIGNED_BARANGAY && !barangays.includes(selectedBarangay)) barangays.push(selectedBarangay);
 
   return (
-    <div className="h-[calc(100vh-110px)] sm:h-[calc(100vh-140px)] flex flex-col relative rounded-2xl sm:rounded-3xl overflow-hidden border border-slate-200/80 shadow-sm font-sans">
+    <div className="h-full w-full flex flex-col relative overflow-hidden font-sans">
       {/* Top Controls Toolbar */}
-      <div className="bg-white p-3 sm:p-4 border-b border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 sm:gap-4 z-10 shadow-sm">
-        <div className="flex items-center justify-between w-full sm:w-auto gap-3">
-          <div className="flex items-center gap-2">
-            <h2 className="font-bold text-xs sm:text-sm text-slate-900 truncate">Field Surveillance & Risk Map</h2>
-            <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 flex items-center gap-1">
-              <ShieldCheck size={11} />
-              Official GIS
-            </span>
+      <div className="bg-white/95 backdrop-blur-md px-3 py-2 sm:px-4 sm:py-2.5 border-b border-slate-200 z-10 shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 min-w-0">
+          {/* Segmented Mode Control: Sanitation Records vs Model Forecast */}
+          <div className="inline-flex items-center bg-slate-100 p-0.5 sm:p-1 rounded-xl shrink-0 border border-slate-200/80">
+            <button
+              type="button"
+              onClick={() => forecast.setSource("sanitation")}
+              className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 whitespace-nowrap ${
+                !isModel
+                  ? "bg-white text-blue-900 shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Droplets size={12} className={!isModel ? "text-blue-600 shrink-0" : "text-slate-400 shrink-0"} />
+              <span>Sanitation Records</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => forecast.setSource("model")}
+              className={`px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all cursor-pointer flex items-center gap-1 sm:gap-1.5 whitespace-nowrap ${
+                isModel
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Activity size={12} className={isModel ? "text-white shrink-0" : "text-slate-400 shrink-0"} />
+              <span>Model Forecast</span>
+            </button>
           </div>
-          <button
-            onClick={() => { fetchData(); forecast.retry(); setHazardRefresh(value => value + 1); }}
-            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 flex-shrink-0"
-            title="Refresh map layers"
+
+          {/* Barangay Scope Dropdown */}
+          <select
+            value={selectedBarangay}
+            aria-label="Water source barangay"
+            onChange={(e) => setSelectedBarangay(e.target.value)}
+            className="px-2 sm:px-2.5 py-1 sm:py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[10px] sm:text-xs font-semibold text-slate-700 cursor-pointer focus:outline-none min-w-0 max-w-[125px] sm:max-w-[180px] truncate"
           >
-            <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
-          </button>
+            <option value="all">All Barangays</option>
+            {selectedBarangay === UNASSIGNED_BARANGAY && <option value={UNASSIGNED_BARANGAY}>No assigned barangay</option>}
+            {barangays.map((b) => (
+              <option key={b} value={b}>Brgy. {b}</option>
+            ))}
+          </select>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 text-xs w-full sm:w-auto">
-          {/* Search Input */}
-          <div className="relative flex-1 sm:w-40 min-w-[120px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
+        <div className="flex items-center gap-1.5 sm:gap-2 justify-between md:justify-end min-w-0">
+          {/* Search Station Input */}
+          <div className="relative flex-1 md:w-44 min-w-[110px]">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={13} />
             <input
               type="text"
               placeholder="Search station..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-7 pr-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
+              className="w-full pl-7 pr-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs focus:outline-none focus:border-blue-500"
             />
           </div>
 
-          {/* Barangay Filter */}
-          <select
-            value={selectedBarangay}
-            aria-label="Water source barangay"
-            onChange={(e) => setSelectedBarangay(e.target.value)}
-            className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs"
-          >
-            <option value="all">All Barangays</option>
-            {selectedBarangay === UNASSIGNED_BARANGAY && <option value={UNASSIGNED_BARANGAY}>No assigned barangay</option>}
-            {barangays.map((b) => (
-              <option key={b} value={b}>{b}</option>
-            ))}
-          </select>
-
-          {/* The contamination plume represents recorded sanitation results. */}
-          {!isModel && <button
-            onClick={() => {
-              const next = !showWaterHeatmap;
-              setShowWaterHeatmap(next);
-              showWaterHeatmapRef.current = next;
-              renderWaterHeatmap();
-              renderMarkers();
-            }}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-              showWaterHeatmap
-                ? "bg-rose-600 text-white border-rose-700 shadow-sm"
-                : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-            }`}
-            title="Toggle Water Contamination Plume Heatmap (Hides discrete water pins)"
-          >
-            <Droplets size={13} className={showWaterHeatmap ? "text-white" : "text-rose-500"} />
-            <span>Contamination Heatmap</span>
-            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${showWaterHeatmap ? "bg-rose-800 text-white" : "bg-slate-100 text-slate-500"}`}>
-              {showWaterHeatmap ? "ON" : "OFF"}
-            </span>
-          </button>}
-
-          {/* Water Station Pins Toggle */}
+          {/* Pins Toggle */}
           <button
+            type="button"
             onClick={() => setShowMarkers(!showMarkers)}
             disabled={showWaterHeatmap}
-            className={`px-2.5 sm:px-3 py-1.5 rounded-full font-semibold border flex items-center gap-1.5 text-[11px] sm:text-xs transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+            className={`px-2.5 py-1 rounded-lg font-semibold border flex items-center gap-1 text-[11px] sm:text-xs transition-all cursor-pointer flex-shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
               showWaterHeatmap
-                ? "bg-slate-100 text-slate-400 border-slate-200 opacity-60 cursor-not-allowed"
+                ? "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
                 : showMarkers
                 ? "bg-blue-50 text-blue-700 border-blue-200"
-                : "bg-white text-slate-500 border-slate-200"
+                : "bg-white text-slate-600 border-slate-200"
             }`}
             title={showWaterHeatmap ? "Pins hidden while Contamination Heatmap is active" : "Toggle Water Station Pins"}
           >
-            {showMarkers && !showWaterHeatmap ? <Eye size={13} /> : <EyeOff size={13} />}
+            {showMarkers && !showWaterHeatmap ? <Eye size={12} /> : <EyeOff size={12} />}
             <span>Pins ({visibleLocations.length})</span>
+          </button>
+
+          {/* Contamination Heatmap (only when in sanitation mode) */}
+          {!isModel && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = !showWaterHeatmap;
+                setShowWaterHeatmap(next);
+                showWaterHeatmapRef.current = next;
+                renderWaterHeatmap();
+                renderMarkers();
+              }}
+              className={`px-2.5 py-1 rounded-lg font-semibold border flex items-center gap-1 text-[11px] sm:text-xs transition-all cursor-pointer flex-shrink-0 ${
+                showWaterHeatmap
+                  ? "bg-rose-600 text-white border-rose-700 shadow-2xs"
+                  : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+              }`}
+              title="Toggle Water Contamination Plume Heatmap"
+            >
+              <Droplets size={12} className={showWaterHeatmap ? "text-white" : "text-rose-500"} />
+              <span className="hidden sm:inline">Heatmap</span>
+              <span className={`text-[9px] px-1 py-0.2 rounded-full font-bold ${showWaterHeatmap ? "bg-rose-800 text-white" : "bg-slate-100 text-slate-500"}`}>
+                {showWaterHeatmap ? "ON" : "OFF"}
+              </span>
+            </button>
+          )}
+
+          {/* Refresh button */}
+          <button
+            type="button"
+            onClick={() => { fetchData(); forecast.retry(); setHazardRefresh(value => value + 1); }}
+            className="p-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 cursor-pointer flex-shrink-0"
+            title="Refresh map layers and forecast"
+          >
+            <RefreshCw size={13} className={loading || forecast.loading ? "animate-spin" : ""} />
           </button>
         </div>
       </div>
+
+      {/* Model Forecast Error Banner if any */}
+      {isModel && forecast.error && (
+        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs px-3 py-1.5 flex items-center justify-between gap-2 z-20 shrink-0">
+          <span className="truncate font-medium">{forecast.error}</span>
+          <button type="button" onClick={forecast.retry} className="underline font-bold text-amber-800 text-[11px] shrink-0 cursor-pointer">
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Map Canvas */}
       <div className="relative flex flex-col flex-1 min-w-0 min-h-0">
@@ -531,11 +569,6 @@ const WaterMap = () => {
         `}</style>
         <div ref={mapContainer} className="w-full h-full" />
         {mapReady && <HazardOverlay mapRef={map} area={selectedBarangay} onAreaChange={setSelectedBarangay} barangays={barangays} apiUrl={API_URL} token={token} refreshKey={hazardRefresh} />}
-
-        {/* Map data controls float inside the main map. */}
-        <div className="absolute top-3 md:top-4 left-1/2 -translate-x-1/2 z-10 w-max max-w-[calc(100%-4rem)]">
-          <MapForecastControls forecast={forecast} />
-        </div>
 
         {/* Loading indicator for the selected map data source. */}
         {(isModel ? forecast.loading : loading) && (
@@ -574,15 +607,15 @@ const WaterMap = () => {
         {/* Selected Water Location Detail Card */}
         {selectedLocation && (
           <div className="absolute bottom-4 left-4 right-4 sm:top-20 sm:right-6 sm:bottom-auto sm:left-auto sm:w-84 max-h-[70%] overflow-y-auto z-40 bg-white rounded-3xl p-5 shadow-2xl border border-slate-100 animate-fade-in">
-            <div className="flex items-start justify-between pb-3 border-b border-slate-100">
-              <div>
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600">Station Overview</span>
-                <h3 className="font-bold text-base text-slate-900">{selectedLocation.full_name || selectedLocation.name}</h3>
-                <p className="text-xs text-slate-500">Barangay {selectedLocation.barangay}</p>
+            <div className="flex items-start justify-between gap-2 pb-3 border-b border-slate-100">
+              <div className="min-w-0 flex-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 block">Station Overview</span>
+                <h3 className="font-bold text-base text-slate-900 truncate" title={selectedLocation.full_name || selectedLocation.name}>{selectedLocation.full_name || selectedLocation.name}</h3>
+                <p className="text-xs text-slate-500 truncate">Barangay {selectedLocation.barangay}</p>
               </div>
               <button
                 onClick={() => setSelectedLocation(null)}
-                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100"
+                className="text-slate-400 hover:text-slate-700 p-1.5 rounded-lg hover:bg-slate-100 flex-shrink-0"
               >
                 ✕
               </button>

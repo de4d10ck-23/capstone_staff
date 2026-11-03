@@ -128,7 +128,7 @@ const ReportDetailModal = ({
               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                 {(report.type || report.category || "Concern").replace(/_/g, " ")}
               </span>
-              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider whitespace-nowrap inline-flex items-center ${
                 isPending
                   ? "bg-amber-100 text-amber-800 border border-amber-200"
                   : isValidated
@@ -152,12 +152,12 @@ const ReportDetailModal = ({
                   : report.status || "Pending Review"}
               </span>
             </div>
-            <h2 className="text-xl font-extrabold text-slate-900 pt-1">{report.title}</h2>
+            <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 pt-1 break-words">{report.title}</h2>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer flex-shrink-0"
             title="Close details"
           >
             <X size={18} />

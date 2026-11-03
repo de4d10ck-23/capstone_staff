@@ -85,12 +85,12 @@ const AddWaterSource = () => {
 
   return (
     <div className="max-w-3xl mx-auto space-y-8 animate-fade-in font-sans">
-      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-8 text-white shadow-xl">
-        <div className="flex items-center gap-3 mb-2">
-          <PlusCircle size={24} className="text-cyan-300" />
-          <h1 className="text-3xl font-extrabold text-white">Add Inspected Water Source</h1>
+      <div className="bg-gradient-to-r from-blue-900 via-blue-800 to-cyan-800 rounded-3xl p-5 sm:p-8 text-white shadow-xl overflow-hidden">
+        <div className="flex items-center gap-3 mb-2 min-w-0">
+          <PlusCircle size={24} className="text-cyan-300 flex-shrink-0" />
+          <h1 className="text-xl sm:text-3xl font-extrabold text-white truncate">Add Inspected Water Source</h1>
         </div>
-        <p className="text-white/80 text-sm max-w-xl">
+        <p className="text-white/80 text-xs sm:text-sm max-w-xl">
           Register new field-inspected water stations, shallow wells, or communal taps with laboratory test metrics.
         </p>
       </div>
