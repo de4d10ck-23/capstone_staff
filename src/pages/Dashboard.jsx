@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
 import { 
   Droplets, 
@@ -11,9 +11,64 @@ import {
   FileText, 
   MapPin, 
   FileCheck, 
-  Send 
+  Send,
+  Activity,
+  CheckCircle2,
+  Clock
 } from "lucide-react";
 import { Link } from "react-router-dom";
+
+const categoryTitle = (category) => ({
+  request_inspection: "Water Inspection Request",
+  water_quality: "Water Quality Concern",
+  broken_pipe: "Damaged / Broken Pipeline",
+  toilet_proximity: "Unhygienic Toilet Proximity",
+  unregistered_source: "Unregistered Water Source",
+  new_source: "New Water Source",
+  other: "Other Concern",
+}[category] || (category || "Inspection Request").replace(/_/g, " "));
+
+const cleanDescription = (item) => {
+  if (!item) return "";
+  const raw = item.clean_description || item.description || item.resident_report?.description || "";
+  const cleaned = raw
+    .replace(/\[(?:Attached\s+)?Photo\s+Proof:?\s*[^\]]*\]/gi, "")
+    .replace(/\[Inspected Source:[^\]]*\]\s*/gi, "")
+    .replace(/https?:\/\/[^\s\]]+/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned || "Routine inspection request";
+};
+
+const extractWaterSourceName = (item, sourceMap = {}) => {
+  if (!item) return "N/A";
+  if (item.water_source_name) return item.water_source_name;
+  if (item.location_name) return item.location_name;
+
+  if (item.location_id && sourceMap[item.location_id]) {
+    return sourceMap[item.location_id];
+  }
+
+  const raw = item.description || item.resident_report?.description || "";
+
+  const match = raw.match(/\[Inspected Source:\s*(.*?)(?:\s*\(ID:[^)]+\))?\s*\]/i);
+  if (match && match[1]?.trim()) {
+    return match[1].trim();
+  }
+
+  const idMatch = raw.match(/\(ID:\s*([a-f0-9\-]+)\)/i);
+  if (idMatch && sourceMap[idMatch[1]]) {
+    return sourceMap[idMatch[1]];
+  }
+
+  const title = item.title || item.resident_report?.title || "";
+  if (title.includes(" - ")) {
+    const parts = title.split(" - ");
+    if (parts.length > 1) return parts[parts.length - 1].trim();
+  }
+
+  return "General Source";
+};
 
 const Dashboard = () => {
   const { user, token, API_URL } = useAuth();
@@ -27,6 +82,14 @@ const Dashboard = () => {
   const isBarangay = user?.role === "barangay_official";
   const isInspector = user?.role === "sanitization_inspector";
   const isCHO = user?.role === "city_health_officer";
+
+  const sourceMap = useMemo(() => {
+    const map = {};
+    sources.forEach((s) => {
+      if (s?.id) map[s.id] = s.name || s.full_name || s.station_name;
+    });
+    return map;
+  }, [sources]);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -70,19 +133,22 @@ const Dashboard = () => {
           if (reportsData.success && Array.isArray(reportsData.data)) setReports(reportsData.data);
         } else {
           // Fetch Inspector overview data
-          const [statsRes, inspRes] = await Promise.all([
+          const [statsRes, inspRes, sourcesRes] = await Promise.all([
             fetch(`${API_URL}/analytics/overview`, {
               headers: { Authorization: `Bearer ${token}` }
             }),
             fetch(`${API_URL}/inspections`, {
               headers: { Authorization: `Bearer ${token}` }
-            })
+            }),
+            fetch(`${API_URL}/water-locations`)
           ]);
 
           const statsData = await statsRes.json().catch(() => ({}));
           const inspData = await inspRes.json().catch(() => ({}));
+          const sourcesData = await sourcesRes.json().catch(() => ({}));
 
           if (statsData.success) setStats(statsData.data);
+          if (sourcesData.success && Array.isArray(sourcesData.data)) setSources(sourcesData.data);
           if (inspData.success && Array.isArray(inspData.data)) setInspections(inspData.data);
         }
       } catch (err) {
@@ -519,53 +585,69 @@ const Dashboard = () => {
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-500 font-semibold uppercase tracking-wider border-y border-slate-100">
                 <tr>
-                  <th className="py-3.5 px-4">Barangay</th>
+                  <th className="py-3.5 px-4 whitespace-nowrap">Barangay</th>
+                  <th className="py-3.5 px-4 whitespace-nowrap">Water Source Name</th>
+                  <th className="py-3.5 px-4 whitespace-nowrap">Category</th>
                   <th className="py-3.5 px-4">Reason / Description</th>
-                  <th className="py-3.5 px-4">Priority</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4 text-right">Action</th>
+                  <th className="py-3.5 px-4 whitespace-nowrap">Status</th>
+                  <th className="py-3.5 px-4 text-right whitespace-nowrap">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {inspections.length === 0 ? (
                   <tr>
-                    <td colSpan="5" className="text-center py-8 text-slate-400">
+                    <td colSpan="6" className="text-center py-8 text-slate-400">
                       No active inspection requests pending in the queue.
                     </td>
                   </tr>
                 ) : (
                   inspections.slice(0, 5).map((i) => {
-                    const isHigh = i.priority === "high";
-                    const isMed = i.priority === "medium";
+                    const isCompleted = i.status === "completed" || i.status === "done";
+                    const isInProgress = i.status === "in_progress";
+                    const isPending = !i.status || ["pending", "assigned"].includes(i.status);
+                    const isDismissed = i.status === "cancelled" || i.status === "dismissed";
+                    const cleanDesc = cleanDescription(i);
+                    const waterSourceName = extractWaterSourceName(i, sourceMap);
+                    const categoryName = categoryTitle(i.category || i.type || i.resident_report?.type || i.resident_report?.category);
 
                     return (
                       <tr key={i.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3.5 px-4 font-bold text-slate-900">Brgy. {i.barangay || "Maasin"}</td>
-                        <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">{i.description}</td>
-                        <td className="py-3.5 px-4">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                              isHigh
-                                ? "bg-red-100 text-red-800"
-                                : isMed
-                                ? "bg-amber-100 text-amber-800"
-                                : "bg-blue-100 text-blue-800"
-                            }`}
-                          >
-                            {i.priority || "Normal"}
+                        <td className="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap">
+                          Brgy. {i.barangay || "Maasin"}
+                        </td>
+                        <td className="py-3.5 px-4 font-semibold text-slate-800 max-w-[180px] sm:max-w-xs">
+                          <p className="truncate" title={waterSourceName}>{waterSourceName}</p>
+                        </td>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 capitalize border border-slate-200 whitespace-nowrap inline-block">
+                            {categoryName}
                           </span>
                         </td>
-                        <td className="py-3.5 px-4">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold capitalize bg-slate-100 text-slate-700">
-                            {i.status || "Pending"}
+                        <td className="py-3.5 px-4 text-slate-600 max-w-xs">
+                          <p className="truncate" title={cleanDesc}>{cleanDesc}</p>
+                        </td>
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 whitespace-nowrap ${
+                            isCompleted
+                              ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                              : isInProgress
+                              ? "bg-cyan-100 text-cyan-800 border border-cyan-200 animate-pulse"
+                              : isDismissed
+                              ? "bg-slate-100 text-slate-700 border border-slate-200"
+                              : "bg-amber-100 text-amber-800 border border-amber-200"
+                          }`}>
+                            {isInProgress && <Activity size={10} />}
+                            {isCompleted && <CheckCircle2 size={10} />}
+                            {isPending && <Clock size={10} />}
+                            <span>{isCompleted ? "Done" : isDismissed ? "Dismissed" : isInProgress ? "Processing" : "Pending Review"}</span>
                           </span>
                         </td>
-                        <td className="py-3.5 px-4 text-right">
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
                           <Link
                             to="/inspections"
                             className="text-blue-700 hover:text-blue-900 font-semibold inline-flex items-center gap-1"
                           >
-                            <span>Process</span>
+                            <span>{isCompleted ? "View" : "Process"}</span>
                             <ArrowRight size={12} />
                           </Link>
                         </td>
