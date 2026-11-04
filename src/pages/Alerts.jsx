@@ -17,11 +17,12 @@ const Alerts = () => {
   const [successMsg, setSuccessMsg] = useState("");
   const [errorMsg, setErrorMsg] = useState("");
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = async (isBackground = false) => {
     try {
-      setLoading(true);
+      if (!isBackground) setLoading(true);
       const res = await fetch(`${API_URL}/notifications`, {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: { Authorization: `Bearer ${token}` },
+        cache: "no-store",
       });
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
@@ -30,12 +31,23 @@ const Alerts = () => {
     } catch (err) {
       console.error("Error fetching notifications:", err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchNotifications();
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        fetchNotifications(true);
+      }
+    }, 15000);
+    const onFocus = () => fetchNotifications(true);
+    window.addEventListener("focus", onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [token, API_URL]);
 
   const handleBroadcast = async (e) => {
@@ -45,12 +57,18 @@ const Alerts = () => {
     setIsSending(true);
 
     try {
+      const targetRoles = Array.from(new Set([
+        "resident",
+        "barangay_official",
+        ...(user?.role ? [user.role] : [])
+      ]));
+
       const payload = {
         title: title.trim(),
         message: message.trim(),
         type,
         barangay: isBarangayOfficial ? user?.barangay : (barangay === "all" ? null : barangay),
-        target_roles: ["resident"]
+        target_roles: targetRoles
       };
 
       const res = await fetch(`${API_URL}/notifications`, {
@@ -67,7 +85,10 @@ const Alerts = () => {
         setSuccessMsg(data.message || "Advisory posted.");
         setTitle("");
         setMessage("");
-        fetchNotifications();
+        if (data.data) {
+          setNotifications((prev) => [data.data, ...prev.filter((n) => n.id !== data.data.id)]);
+        }
+        await fetchNotifications(true);
       } else {
         setErrorMsg(data.detail || "Failed to broadcast alert.");
       }

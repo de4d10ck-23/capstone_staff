@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useAuth } from "../context/AuthContext";
-import { 
-  Droplets, 
-  ShieldCheck, 
-  AlertTriangle, 
-  ClipboardList, 
-  CheckCircle, 
-  PlusCircle, 
-  ArrowRight, 
-  FileText, 
-  MapPin, 
-  FileCheck, 
+import {
+  Droplets,
+  ShieldCheck,
+  AlertTriangle,
+  ClipboardList,
+  CheckCircle,
+  PlusCircle,
+  ArrowRight,
+  FileText,
+  MapPin,
+  FileCheck,
   Send,
   Activity,
   CheckCircle2,
@@ -310,7 +310,11 @@ const Dashboard = () => {
                     </tr>
                   ) : (
                     sources.map((s) => {
-                      const hasEColi = Boolean(s.e_coli || (s.e_coli_count && Number(s.e_coli_count) > 0) || s.status === "undrinkable");
+                      const statLower = s.status?.toLowerCase();
+                      const isSafe = statLower === "safe";
+                      const isWarning = statLower === "warning";
+                      const isUnknown = !statLower || statLower === "unknown";
+                      const hasEColi = Boolean(s.e_coli || (s.e_coli_count && Number(s.e_coli_count) > 0) || statLower === "undrinkable" || statLower === "contaminated");
                       return (
                         <tr key={s.id} className="hover:bg-slate-50/70 transition-colors">
                           <td className="py-3 px-4 font-bold text-slate-900 max-w-[160px] sm:max-w-xs truncate" title={s.name}>{s.name}</td>
@@ -318,18 +322,20 @@ const Dashboard = () => {
                           <td className="py-3 px-4">
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
-                                s.status === "safe"
-                                  ? "bg-emerald-100 text-emerald-800"
-                                  : s.status === "warning"
-                                  ? "bg-amber-100 text-amber-800"
-                                  : "bg-red-100 text-red-800"
+                                isSafe
+                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                  : isWarning
+                                    ? "bg-amber-100 text-amber-800 border border-amber-200"
+                                    : isUnknown
+                                      ? "bg-slate-100 text-slate-700 border border-slate-200"
+                                      : "bg-red-100 text-red-800 border border-red-200"
                               }`}
                             >
                               {s.status || "Unknown"}
                             </span>
                           </td>
                           <td className="py-3 px-4">
-                            {s.status?.toLowerCase() === "unknown" || s.e_coli === null || s.e_coli === undefined || s.e_coli === "unknown" ? (
+                            {isUnknown || s.e_coli === null || s.e_coli === undefined || s.e_coli === "unknown" ? (
                               <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
                                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
                                 Unknown
@@ -380,17 +386,16 @@ const Dashboard = () => {
                         {(c.type || c.category || "Concern").replace(/_/g, " ")}
                       </span>
                       <span
-                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize whitespace-nowrap ${
-                          c.status === "validated"
+                        className={`text-[10px] font-semibold px-2 py-0.5 rounded-full capitalize whitespace-nowrap ${c.status === "validated"
                             ? "bg-emerald-100 text-emerald-700"
                             : c.status === "escalated"
-                            ? "bg-purple-100 text-purple-700"
-                            : c.status === "done" || c.status === "resolved"
-                            ? "bg-blue-100 text-blue-700"
-                            : c.status === "rejected"
-                            ? "bg-red-100 text-red-700"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
+                              ? "bg-purple-100 text-purple-700"
+                              : c.status === "done" || c.status === "resolved"
+                                ? "bg-blue-100 text-blue-700"
+                                : c.status === "rejected"
+                                  ? "bg-red-100 text-red-700"
+                                  : "bg-amber-100 text-amber-800"
+                          }`}
                       >
                         {c.status || "Pending"}
                       </span>
@@ -627,15 +632,14 @@ const Dashboard = () => {
                           <p className="truncate" title={cleanDesc}>{cleanDesc}</p>
                         </td>
                         <td className="py-3.5 px-4 whitespace-nowrap">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 whitespace-nowrap ${
-                            isCompleted
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider inline-flex items-center gap-1 whitespace-nowrap ${isCompleted
                               ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                               : isInProgress
-                              ? "bg-cyan-100 text-cyan-800 border border-cyan-200 animate-pulse"
-                              : isDismissed
-                              ? "bg-slate-100 text-slate-700 border border-slate-200"
-                              : "bg-amber-100 text-amber-800 border border-amber-200"
-                          }`}>
+                                ? "bg-cyan-100 text-cyan-800 border border-cyan-200 animate-pulse"
+                                : isDismissed
+                                  ? "bg-slate-100 text-slate-700 border border-slate-200"
+                                  : "bg-amber-100 text-amber-800 border border-amber-200"
+                            }`}>
                             {isInProgress && <Activity size={10} />}
                             {isCompleted && <CheckCircle2 size={10} />}
                             {isPending && <Clock size={10} />}
