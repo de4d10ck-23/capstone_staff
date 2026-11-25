@@ -67,6 +67,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    if (token) {
+      fetch(`${API_URL}/auth/logout`, {
+        method: 'POST', headers: { Authorization: `Bearer ${token}` }, keepalive: true,
+      }).catch(() => console.warn('Sign-out activity could not reach the server.'));
+    }
     localStorage.removeItem('staff_token');
     setToken(null);
     setUser(null);
