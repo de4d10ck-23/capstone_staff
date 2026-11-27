@@ -166,7 +166,7 @@ const Dashboard = () => {
       case "city_health_officer":
         return "CHU - DOCTOR";
       case "sanitization_inspector":
-        return "CHU - Sanitization Inspector";
+        return "CHU - Sanitation Inspector";
       case "barangay_official":
         return "Barangay Official";
       case "admin":
@@ -417,7 +417,7 @@ const Dashboard = () => {
   }
 
   // -------------------------------------------------------------
-  // SANITIZATION INSPECTOR / CHO / ADMIN DASHBOARD
+  // SANITATION INSPECTOR / CHO / ADMIN DASHBOARD
   // -------------------------------------------------------------
   const pendingInspections = inspections.filter((i) => i.status === "pending" || i.status === "assigned");
 
@@ -432,7 +432,7 @@ const Dashboard = () => {
           <h1 className="text-2xl sm:text-3xl font-extrabold text-white truncate">Welcome, {user?.full_name}</h1>
           <p className="text-white/80 text-xs sm:text-sm max-w-xl">
             {isInspector && "Review assigned field inspection orders and log water laboratory testing samples."}
-            {isCHO && "Review and verify water surveillance inspection reports compiled by Sanitization Inspectors."}
+            {isCHO && "Review and verify water surveillance inspection reports compiled by Sanitation Inspectors."}
           </p>
         </div>
 
@@ -517,7 +517,7 @@ const Dashboard = () => {
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-base font-bold text-slate-900">Submitted Surveillance Reports</h2>
-              <p className="text-xs text-slate-500">Inspection & audit summaries submitted by Sanitization Inspectors</p>
+              <p className="text-xs text-slate-500">Inspection & audit summaries submitted by Sanitation Inspectors</p>
             </div>
             <Link to="/view-reports" className="text-xs font-semibold text-blue-600 hover:text-blue-700">
               View All Reports →

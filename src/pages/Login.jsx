@@ -47,7 +47,7 @@ const Login = () => {
             <Stethoscope size={32} />
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">Staff Portal</h1>
-          <p className="text-slate-500 text-sm mt-1">CHO • Sanitization • Barangay Officials</p>
+          <p className="text-slate-500 text-sm mt-1">CHO • Sanitation • Barangay Officials</p>
         </div>
 
         {error && (

@@ -246,7 +246,7 @@ const EndorsedReports = () => {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`
           },
-          body: JSON.stringify({ status: "in_progress", reason: "Field inspection underway by Sanitization Inspector" })
+          body: JSON.stringify({ status: "in_progress", reason: "Field inspection underway by Sanitation Inspector" })
         });
         const data = await res.json();
         if (data.success) {
@@ -602,7 +602,7 @@ const EndorsedReports = () => {
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200 flex items-center gap-1.5">
               <ShieldAlert size={14} className="text-purple-600" />
-              <span>Sanitization Inspector Dashboard</span>
+              <span>Sanitation Inspector Dashboard</span>
             </span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight">

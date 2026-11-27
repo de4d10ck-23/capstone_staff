@@ -77,7 +77,7 @@ const Layout = () => {
       case 'city_health_officer':
         return 'CHU - DOCTOR';
       case 'sanitization_inspector':
-        return 'CHU - Sanitization Inspector';
+        return 'CHU - Sanitation Inspector';
       case 'barangay_official':
         return 'Barangay Official';
       case 'admin':

@@ -39,7 +39,7 @@ const EscalateConcern = () => {
 
       const data = await res.json();
       if (data.success) {
-        setSuccessMsg("Urgent escalation dispatched directly to City Health Officers and Sanitization Inspectors!");
+        setSuccessMsg("Urgent escalation dispatched directly to City Health Officers and Sanitation Inspectors!");
         setFormData({
           title: "",
           severity: "critical",
