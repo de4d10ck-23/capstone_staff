@@ -20,37 +20,12 @@ import { MAASIN_BARANGAYS as barangays } from "../constants/barangays";
 
 const PAGE_SIZE = 10;
 
-const formatRoleLabel = (role) =>
-  String(role || "")
-    .split("_")
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
-
-const getPaginationItems = (currentPage, totalPages) => {
-  if (totalPages <= 5) {
-    return Array.from({ length: totalPages }, (_, i) => i + 1);
-  }
-  const items = [1];
-  const start = Math.max(2, currentPage - 1);
-  const end = Math.min(totalPages - 1, currentPage + 1);
-
-  if (start > 2) items.push("ellipsis-left");
-  for (let p = start; p <= end; p += 1) {
-    items.push(p);
-  }
-  if (end < totalPages - 1) items.push("ellipsis-right");
-  items.push(totalPages);
-  return items;
-};
-
 const Alerts = () => {
   const { token, API_URL, user } = useAuth();
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  const [totalPages, setTotalPages] = useState(1);
+  const [hasNext, setHasNext] = useState(false);
   const [selectedNotification, setSelectedNotification] = useState(null);
 
   const [title, setTitle] = useState("");
@@ -76,17 +51,12 @@ const Alerts = () => {
       });
       const data = await res.json();
       if (data.success && Array.isArray(data.data)) {
-        setNotifications(data.data);
-        const nextTotal = typeof data.total_count === "number" ? data.total_count : data.data.length;
-        const nextTotalPages =
-          typeof data.total_pages === "number"
-            ? Math.max(1, data.total_pages)
-            : Math.max(1, Math.ceil(nextTotal / PAGE_SIZE));
-        setTotalCount(nextTotal);
-        setTotalPages(nextTotalPages);
-        if (typeof data.page === "number" && data.page !== targetPage) {
-          setPage(data.page);
+        if (targetPage > 1 && data.data.length === 0) {
+          setPage((p) => Math.max(1, p - 1));
+          return;
         }
+        setNotifications(data.data);
+        setHasNext(Boolean(data.has_next));
       }
     } catch (err) {
       console.error("Error fetching notifications:", err);
@@ -128,11 +98,7 @@ const Alerts = () => {
     setIsSending(true);
 
     try {
-      const targetRoles = Array.from(new Set([
-        "resident",
-        "barangay_official",
-        ...(user?.role ? [user.role] : [])
-      ]));
+      const targetRoles = ["resident"];
 
       const payload = {
         title: title.trim(),
@@ -193,9 +159,8 @@ const Alerts = () => {
     }
   };
 
-  const rangeStart = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const rangeEnd = Math.min(page * PAGE_SIZE, totalCount);
-  const paginationItems = getPaginationItems(page, totalPages);
+  const rangeStart = notifications.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = (page - 1) * PAGE_SIZE + notifications.length;
 
   return (
     <div className="space-y-8 animate-fade-in font-sans">
@@ -317,7 +282,7 @@ const Alerts = () => {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Bell size={20} className="text-blue-600" />
-                <h2 className="text-base font-bold text-slate-900">Broadcast Feed ({totalCount})</h2>
+                <h2 className="text-base font-bold text-slate-900">Broadcast Feed</h2>
               </div>
               <span className="text-xs text-slate-400 font-medium">Auto-Synced</span>
             </div>
@@ -420,11 +385,15 @@ const Alerts = () => {
             </div>
           </div>
 
-          {totalCount > 0 && (
+          {(notifications.length > 0 || page > 1) && (
             <div className="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="text-xs text-slate-500">
-                Showing <span className="font-semibold text-slate-700">{rangeStart}–{rangeEnd}</span> of{" "}
-                <span className="font-semibold text-slate-700">{totalCount}</span> broadcasts
+                Page <span className="font-semibold text-slate-700">{page}</span>
+                {notifications.length > 0 && (
+                  <>
+                    {" "}· Showing <span className="font-semibold text-slate-700">{rangeStart}–{rangeEnd}</span>
+                  </>
+                )}
               </span>
 
               <div className="flex items-center gap-1.5">
@@ -432,39 +401,17 @@ const Alerts = () => {
                   type="button"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1 || loading}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
                 >
                   <ChevronLeft size={14} />
                   <span>Prev</span>
                 </button>
 
-                {paginationItems.map((item) =>
-                  typeof item === "string" ? (
-                    <span key={item} className="px-1.5 text-xs text-slate-400 select-none">
-                      …
-                    </span>
-                  ) : (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => setPage(item)}
-                      disabled={loading}
-                      className={`min-w-[30px] h-[30px] px-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
-                        item === page
-                          ? "bg-blue-900 text-white shadow-sm"
-                          : "border border-slate-200 text-slate-600 hover:bg-slate-50"
-                      }`}
-                    >
-                      {item}
-                    </button>
-                  )
-                )}
-
                 <button
                   type="button"
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page >= totalPages || loading}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
+                  onClick={() => setPage((p) => p + 1)}
+                  disabled={!hasNext || loading}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1 cursor-pointer transition-colors"
                 >
                   <span>Next</span>
                   <ChevronRight size={14} />
@@ -480,10 +427,6 @@ const Alerts = () => {
         const isCritical = selectedNotification.type === "critical";
         const isWarning = selectedNotification.type === "warning";
         const isSafe = selectedNotification.type === "safe";
-        const targetRoles = Array.isArray(selectedNotification.target_roles)
-          ? selectedNotification.target_roles
-          : [];
-
         return (
           <div
             className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4"
@@ -584,24 +527,17 @@ const Alerts = () => {
                   </div>
                 </div>
 
-                {targetRoles.length > 0 && (
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-                      <Users size={12} />
-                      <span>Target Audience</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1.5">
-                      {targetRoles.map((role) => (
-                        <span
-                          key={role}
-                          className="px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-[11px] font-medium text-slate-700"
-                        >
-                          {formatRoleLabel(role)}
-                        </span>
-                      ))}
-                    </div>
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                    <Users size={12} />
+                    <span>Target Audience</span>
                   </div>
-                )}
+                  <div className="flex flex-wrap gap-1.5">
+                    <span className="px-2.5 py-1 rounded-full bg-slate-100 border border-slate-200 text-[11px] font-medium text-slate-700">
+                      Resident
+                    </span>
+                  </div>
+                </div>
 
                 <div className="space-y-1.5">
                   <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
